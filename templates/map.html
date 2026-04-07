@@ -113,7 +113,7 @@
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
     let userRole = {{ user_role }};
-    let showTracks = {{ show_tracks }};
+    let showTracks = {{ show_tracks }} || {};
     let stationaryOfficers = {{ stationary_officers }};
     let userColors = {{ user_colors }};
     let initialOfficers = {{ initial_officers }};
@@ -122,13 +122,29 @@
 
     // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
     function safeObject(v) {
-        return (typeof v === "object" && v !== null) ? v : {};
+        if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+            return v;
+        }
+        return {};
+    }
+    
+    function safeArray(v) {
+        return Array.isArray(v) ? v : [];
+    }
+    
+    function safeString(v, def = "") {
+        return (typeof v === "string") ? v : def;
     }
 
     const safeShowTracks = safeObject(showTracks);
     const safeInitialOfficers = safeObject(initialOfficers);
-    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
+    const safeStationaryOfficers = safeArray(stationaryOfficers);
     const safeUserColors = safeObject(userColors);
+    console.log("DEBUG:");
+    console.log("showTracks:", showTracks);
+    console.log("initialOfficers:", initialOfficers);
+    console.log("stationaryOfficers:", stationaryOfficers);
+    console.log("userColors:", userColors);
     if (typeof userRole !== 'string') userRole = 'officer';
 
     // Biến toàn cục
