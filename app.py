@@ -8,6 +8,8 @@ from datetime import datetime, timezone, timedelta
 import base64
 import os
 from logger import setup_logger, get_logger
+from datetime import datetime, timezone, timedelta
+VN_TIMEZONE = timezone(timedelta(hours=7))
 
 setup_logger()  # 🔥 BẮT BUỘC
 logger = get_logger(__name__)
@@ -528,20 +530,16 @@ with tab2:
                 st.rerun()
 
 with tab3:
-    st.subheader("📋 Nhật ký hệ thống (backend)")
-    log_file_today = f"logs/system_{datetime.now().strftime('%Y-%m-%d')}.log"
+    st.subheader("📋 Nhật ký hệ thống")
+    log_file_today = f"logs/system_{datetime.now(VN_TIMEZONE).strftime('%Y-%m-%d')}.log"
     if os.path.exists(log_file_today):
         with open(log_file_today, "r", encoding="utf-8") as f:
             logs = f.read()
-        # Hiển thị 200 dòng cuối (có thể điều chỉnh)
         st.text_area("Logs (200 dòng cuối)", "\n".join(logs.splitlines()[-200:]), height=500)
     else:
         st.info("Chưa có log hôm nay. Hãy thực hiện một số thao tác để tạo log.")
-    
-    # Nút làm mới log
     if st.button("🔄 Tải lại log"):
         st.rerun()
-
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ==================== THÔNG TIN PHỤ TRONG SIDEBAR ====================
@@ -593,15 +591,6 @@ if user_role == "commander" and officers:
     else:
         st.sidebar.info("Không có cán bộ khác trực tuyến")
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
-with st.expander("📄 Xem log hệ thống"):
-    log_file = f"logs/system_{datetime.now().strftime('%Y-%m-%d')}.log"
-    
-    if os.path.exists(log_file):
-        with open(log_file, "r", encoding="utf-8") as f:
-            logs = f.read()
-            st.text_area("Logs", logs, height=300)
-    else:
-        st.info("Chưa có log")
 # ==================== CLEANUP ĐỊNH KỲ ====================
 if "last_cleanup" not in st.session_state or time.time() - st.session_state.last_cleanup > 60:
     cleanup_old_data()
