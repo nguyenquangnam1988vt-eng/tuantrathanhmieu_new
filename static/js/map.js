@@ -47,7 +47,17 @@ function saveDrawing() {
     if (drawFinish) drawFinish.style.display = 'none';
 }
 
-// ==================== KHỞI TẠO TRACKS ====================
+// ==================== KHỞI TẠO TRACKS (dùng safeShowTracks và allOfficers) ====================
+function initAllTracks() {
+    if (typeof safeShowTracks !== 'object') return;
+    Object.entries(safeShowTracks).forEach(([uid, show]) => {
+        if (show && allOfficers[uid]) {
+            loadUserTracks(uid, allOfficers[uid].name, true);
+        }
+    });
+}
+
+// Gọi sau khi allOfficers đã có dữ liệu (setTimeout để đảm bảo)
 setTimeout(() => {
     if (typeof initAllTracks === 'function') {
         initAllTracks();
