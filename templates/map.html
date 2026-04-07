@@ -23,11 +23,7 @@
         .cancel-btn { background: #ff4444; color: white; border: none; border-radius: 5px; padding: 5px 12px; margin-left: 10px; cursor: pointer; font-size: 14px; }
         .leaflet-marker-icon { transition: transform 0.2s ease; }
         .leaflet-marker-icon:hover { transform: scale(1.3); }
-        #map {
-            -webkit-user-select: none;
-            user-select: none;
-            -webkit-touch-callout: none;
-        }
+        * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
         .custom-dialog {
             position: fixed;
             top: 50%;
@@ -117,43 +113,22 @@
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
     let userRole = {{ user_role }};
-    let showTracks = {{ show_tracks | tojson | safe }};
-    let stationaryOfficers = {{ stationary_officers | tojson | safe }};
-    let userColors = {{ user_colors | tojson | safe }};
-    let initialOfficers = {{ initial_officers | tojson | safe }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
     // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
     function safeObject(v) {
-        if (typeof v === "object" && v !== null && !Array.isArray(v)) {
-            return v;
-        }
-        return {};
-    }
-    
-    function safeArray(v) {
-        return Array.isArray(v) ? v : [];
-    }
-    
-    function safeString(v, def = "") {
-        return (typeof v === "string") ? v : def;
+        return (typeof v === "object" && v !== null) ? v : {};
     }
 
     const safeShowTracks = safeObject(showTracks);
     const safeInitialOfficers = safeObject(initialOfficers);
-    const safeStationaryOfficers = safeArray(stationaryOfficers);
+    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
     const safeUserColors = safeObject(userColors);
-    // ⚠️ FIX CRASH BOOLEAN → OBJECT
-    showTracks = safeObject(showTracks);
-    initialOfficers = safeObject(initialOfficers);
-    userColors = safeObject(userColors);
-    stationaryOfficers = safeArray(stationaryOfficers);
-    console.log("DEBUG:");
-    console.log("showTracks:", showTracks);
-    console.log("initialOfficers:", initialOfficers);
-    console.log("stationaryOfficers:", stationaryOfficers);
-    console.log("userColors:", userColors);
     if (typeof userRole !== 'string') userRole = 'officer';
 
     // Biến toàn cục
@@ -310,12 +285,6 @@
             zoomToBoundsOnClick: true
         });
         map.addLayer(officerClusterGroup);
-
-        /* ===== FIX MAP KHÔNG HIỆN / LỆCH ===== */
-        map.whenReady(() => {
-            setTimeout(() => map.invalidateSize(), 200);
-        });
-        
         map.on('moveend', () => {
             const center = map.getCenter();
             sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
@@ -399,8 +368,8 @@
             },
             {
                 enableHighAccuracy: true,
-                maximumAge: 10000,
-                timeout: 20000
+                maximumAge: 5000,
+                timeout: 10000
             }
         );
     } else {
