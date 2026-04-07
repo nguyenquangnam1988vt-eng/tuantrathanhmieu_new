@@ -7,6 +7,10 @@ import time
 from datetime import datetime, timezone, timedelta
 import base64
 import os
+from logger import get_logger
+
+logger = get_logger(__name__)
+logger.info("Application started")
 
 # Import các module đã tách
 from config import get_cookie_key, get_fcm_server_key, get_fcm_vapid_key, get_imgbb_api_key
