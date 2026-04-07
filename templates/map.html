@@ -150,11 +150,8 @@
 
     function initAudio() {
         if (alertSound) return;
-        if (!alertSoundBase64) {
-            console.warn("Không có file âm thanh báo động");
-            return;
-        }
-        alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
+    
+        alertSound = new Audio("/static/sounds/alert.mp3"); // 👈 đường dẫn file
         alertSound.preload = "auto";
         alertSound.loop = false;
     }
