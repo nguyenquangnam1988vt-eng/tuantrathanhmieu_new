@@ -20,8 +20,14 @@ function onMapClick(e) {
     if (!drawingMode) return;
     const { lat, lng } = e.latlng;
     tempPoints.push([lat, lng]);
+
     if (tempPolyline) map.removeLayer(tempPolyline);
-    tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
+
+    tempPolyline = L.polyline(tempPoints, {
+        color: drawingColor,
+        weight: drawingWeight,
+        opacity: 0.8
+    }).addTo(map);
 }
 
 function saveDrawing() {
@@ -29,6 +35,7 @@ function saveDrawing() {
         alert("Cần ít nhất 2 điểm để vẽ.");
         return;
     }
+
     const drawingData = {
         points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
         color: drawingColor,
@@ -38,28 +45,25 @@ function saveDrawing() {
         timestamp: Date.now(),
         type: 'draw'
     };
+
     push(ref(db, 'drawings'), drawingData);
+
     cancelDrawing();
     drawingMode = false;
+
     const drawToggle = document.getElementById('draw-toggle');
     const drawFinish = document.getElementById('draw-finish');
+
     if (drawToggle) drawToggle.style.background = '';
     if (drawFinish) drawFinish.style.display = 'none';
 }
 
-// ==================== KHỞI TẠO TRACKS (dùng safeShowTracks và allOfficers) ====================
-function initAllTracks() {
-    if (typeof safeShowTracks !== 'object') return;
-    Object.entries(safeShowTracks).forEach(([uid, show]) => {
-        if (show && allOfficers[uid]) {
-            loadUserTracks(uid, allOfficers[uid].name, true);
-        }
-    });
-}
 
-// Gọi sau khi allOfficers đã có dữ liệu (setTimeout để đảm bảo)
+// ==================== KHỞI TẠO TRACKS (ĐÃ FIX) ====================
+// ❗ CHỈ gọi từ tracking.js, không dùng initAllTracks nữa
+
 setTimeout(() => {
-    if (typeof initAllTracks === 'function') {
-        initAllTracks();
+    if (typeof initTrackingTracks === 'function') {
+        initTrackingTracks();
     }
 }, 1000);
