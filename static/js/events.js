@@ -38,10 +38,6 @@ onChildAdded(markersRootRef, (userSnapshot) => {
 const incidentsRef = ref(db, 'incidents');
 const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
 onChildAdded(incidentsRef, (data) => {
-    logAction("incident_added", {
-    lat: inc.lat,
-    lng: inc.lng
-    });
     const inc = data.val();
     const id = data.key;
     if (!inc || !inc.timestamp) return;
