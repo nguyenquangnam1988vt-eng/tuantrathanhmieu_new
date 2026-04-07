@@ -80,23 +80,15 @@
             border-radius: 30px;
             backdrop-filter: blur(4px);
         }
-        .unlock-hint {
-            font-size: 14px;
-            margin-top: 15px;
-            opacity: 0.8;
-        }
+        .unlock-hint { font-size: 14px; margin-top: 15px; opacity: 0.8; }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<!-- Nút khóa màn hình và lớp phủ -->
 <button id="lockScreenBtn">🔒 Khóa màn hình</button>
 <div id="lockOverlay">
-    <div>
-        🔒 Màn hình đã bị khóa<br>
-        <span class="unlock-hint">Nhấn nút góc phải dưới để mở khóa</span>
-    </div>
+    <div>🔒 Màn hình đã bị khóa<br><span class="unlock-hint">Nhấn nút góc phải dưới để mở khóa</span></div>
 </div>
 
 <script type="module">
@@ -112,15 +104,15 @@
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    const userRole = {{ user_role }};
-    const showTracks = {{ show_tracks }};
-    const stationaryOfficers = {{ stationary_officers }};
-    const userColors = {{ user_colors }};
-    const initialOfficers = {{ initial_officers }};
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // Hàm an toàn
+    // Hàm an toàn xử lý object
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
@@ -265,7 +257,7 @@
         }
     }
 
-    // ========== CHIA SẺ VỊ TRÍ (BẬT/TẮT QUA NODE 'sharing') ==========
+    // ========== CHIA SẺ VỊ TRÍ ==========
     function startSharing() {
         if (watchId !== null) return;
         console.log("Bắt đầu chia sẻ vị trí");
@@ -358,6 +350,7 @@
                 { enableHighAccuracy: true, timeout: 10000 }
             );
         }
+        console.log("Map initialized successfully");
     }
 
     // ========== FCM FOREGROUND ==========
@@ -393,12 +386,13 @@
         }
     }
 
-    // ========== REALTIME (GỌI SAU KHI MAP ĐÃ KHỞI TẠO) ==========
+    // ========== REALTIME ==========
     function initRealtime() {
         const officersRef = ref(db, 'officers');
         onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
         onChildAdded(officersRef, (snapshot) => {
+            if (!map) return;
             const id = snapshot.key;
             const officer = snapshot.val();
             if (!officer) return;
@@ -413,6 +407,7 @@
         });
 
         onChildChanged(officersRef, (snapshot) => {
+            if (!map) return;
             const id = snapshot.key;
             const officer = snapshot.val();
             if (!officer) return;
@@ -423,6 +418,7 @@
         });
 
         onChildRemoved(officersRef, (snapshot) => {
+            if (!map) return;
             const id = snapshot.key;
             delete allOfficers[id];
             removeOfficerMarker(id);
@@ -446,7 +442,7 @@
             }
         });
 
-        // Stationary officers
+        // Stationary
         safeStationaryOfficers.forEach(officer => {
             if (!map) return;
             if (isValidVNCoordinate(officer.lat, officer.lng)) {
@@ -704,12 +700,10 @@
         drawingLayers[id] = polyline;
     });
     onChildRemoved(drawingsRef, (snapshot) => {
-        if (!map) return;
         const id = snapshot.key;
         if (drawingLayers[id]) { map.removeLayer(drawingLayers[id]); delete drawingLayers[id]; }
     });
     onValue(drawingsRef, (snapshot) => {
-        if (!map) return;
         const data = snapshot.val() || {};
         const currentIds = new Set(Object.keys(data));
         Object.keys(drawingLayers).forEach(id => {
@@ -717,9 +711,8 @@
         });
     });
 
-    // ========== TRACKS (LỊCH SỬ DI CHUYỂN) ==========
+    // ========== TRACKS ==========
     function loadUserTracks(userId, userName, show) {
-        if (!map) return;
         const tracksRef = ref(db, 'tracks/' + userId + '/points');
         const tracksQuery = query(tracksRef, limitToLast(30));
         if (!show) {
@@ -768,7 +761,6 @@
     // ========== MARKERS & INCIDENTS ==========
     const markersRootRef = ref(db, 'markers');
     onChildAdded(markersRootRef, (userSnapshot) => {
-        if (!map) return;
         const userId = userSnapshot.key;
         const userMarkersRef = ref(db, `markers/${userId}`);
         onChildAdded(userMarkersRef, (markerSnapshot) => {
@@ -800,7 +792,6 @@
     const incidentsRef = ref(db, 'incidents');
     const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
     onChildAdded(incidentsRef, (data) => {
-        if (!map) return;
         const inc = data.val();
         const id = data.key;
         if (!inc || !inc.timestamp) return;
@@ -836,7 +827,6 @@
         }
     });
     onChildRemoved(moveOrdersRef, (snapshot) => {
-        if (!map) return;
         const orderId = snapshot.key;
         if (moveOrderLines[orderId]) { map.removeLayer(moveOrderLines[orderId]); delete moveOrderLines[orderId]; }
     });
@@ -855,7 +845,6 @@
     setInterval(checkOrdersCompletion, 5000);
 
     function zoomToAllOfficers() {
-        if (!map) return;
         const officersList = Object.values(allOfficers).filter(o => isValidVNCoordinate(o.lat, o.lng));
         if (officersList.length === 0) return;
         const bounds = L.latLngBounds(officersList.map(o => [o.lat, o.lng]));
@@ -879,9 +868,8 @@
         document.body.appendChild(clearBtn);
     }
 
-    // ========== DIALOG THÊM ĐIỂM & RA LỆNH ==========
+    // ========== DIALOG THÊM ĐIỂM ==========
     function showPointDialog(latlng) {
-        if (!map) return;
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
         if (oldOverlay) oldOverlay.remove();
@@ -1046,14 +1034,12 @@
 
     // ========== CÁC HÀM VẼ ==========
     function startDrawing() {
-        if (!map) return;
         tempPoints = [];
         if (tempPolyline) map.removeLayer(tempPolyline);
         map.on('click', onMapClick);
         map.getContainer().style.cursor = 'crosshair';
     }
     function cancelDrawing() {
-        if (!map) return;
         map.off('click', onMapClick);
         if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
         tempPoints = [];
@@ -1067,7 +1053,6 @@
         tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
     }
     function saveDrawing() {
-        if (!map) return;
         if (tempPoints.length < 2) { alert("Cần ít nhất 2 điểm để vẽ."); return; }
         const drawingData = {
             points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
@@ -1087,11 +1072,10 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
-    // ========== NÚT KHÓA MÀN HÌNH (CHỐNG CHẠM NHẦM) ==========
+    // ========== NÚT KHÓA MÀN HÌNH ==========
     const lockBtn = document.getElementById('lockScreenBtn');
     const lockOverlay = document.getElementById('lockOverlay');
     let isLocked = false;
-
     function setLock(lock) {
         isLocked = lock;
         if (isLocked) {
@@ -1106,24 +1090,20 @@
             if (navigator.vibrate) navigator.vibrate(100);
         }
     }
-
     lockBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         setLock(!isLocked);
     });
+    lockOverlay.addEventListener('click', (e) => e.stopPropagation());
 
-    lockOverlay.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
-
-    // ========== KHỞI CHẠY ỨNG DỤNG ==========
+    // ========== KHỞI CHẠY ==========
     document.addEventListener('DOMContentLoaded', () => {
-        initMap();               // tạo map trước
-        initRealtime();         // sau đó mới gắn listener, thêm layer
+        initMap();
+        initRealtime();
         initOfficersFromInitial();
         initAudio();
         setTimeout(() => {
-            initAllTracks();
+            if (typeof initAllTracks === 'function') initAllTracks();
         }, 1000);
     });
 </script>
