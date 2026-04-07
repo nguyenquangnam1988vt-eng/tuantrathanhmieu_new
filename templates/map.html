@@ -469,27 +469,6 @@
     onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
 
     // ========== DRAW (VẼ) ==========
-    if (userRole === 'commander' || userRole === 'admin') {
-        const toolbar = L.control({ position: 'topright' });
-        toolbar.onAdd = () => {
-            const div = L.DomUtil.create('div', 'drawing-toolbar');
-            div.innerHTML = `
-                <div style="background:white; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-                    <button id="draw-toggle" style="margin:2px; padding:4px 8px;">✏️ Vẽ</button>
-                    <button id="draw-finish" style="margin:2px; padding:4px 8px; display:none; background:#4caf50; color:white;">✅ Hoàn tất</button>
-                    <input type="color" id="draw-color" value="${drawingColor}" style="width:30px; height:30px; margin:2px;">
-                    <input type="range" id="draw-weight" min="2" max="10" step="1" value="${drawingWeight}" style="width:80px; margin:2px;">
-                    <button id="clear-all-drawings" style="margin:2px; padding:4px 8px; background:#ff4444; color:white;">🗑️ Xóa tất cả vẽ hướng đối tượng</button>
-                    <button id="clear-all-alerts" style="margin:2px; padding:4px 8px; background:#ff4444; color:white;">🚨 Xoá tất cả báo động</button>
-                </div>
-            `;
-            L.DomEvent.disableClickPropagation(div);
-            return div;
-        };
-        if (map) {
-            toolbar.addTo(map);
-        }
-
         const drawToggle = document.getElementById('draw-toggle');
         const drawFinish = document.getElementById('draw-finish');
         if (drawToggle) {
@@ -1008,12 +987,39 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
+    // ========== TOOLBAR (THÊM MỚI) ==========
+    function initToolbar() {
+        if (!map) return;
+    
+        if (userRole === 'commander' || userRole === 'admin') {
+            const toolbar = L.control({ position: 'topright' });
+    
+            toolbar.onAdd = () => {
+                const div = L.DomUtil.create('div', 'drawing-toolbar');
+                div.innerHTML = `
+                    <div style="background:white; padding:8px; border-radius:8px;">
+                        <button id="draw-toggle">✏️ Vẽ</button>
+                    </div>
+                `;
+                return div;
+            };
+    
+            toolbar.addTo(map);
+        }
+    }
+
     // ========== KHỞI CHẠY ỨNG DỤNG (ĐÃ SỬA ĐÚNG THỨ TỰ) ==========
-    document.addEventListener('DOMContentLoaded', () => {
-        initMap();               // tạo map trước
-        initRealtime();         // sau đó mới gắn listener, thêm layer
+   document.addEventListener('DOMContentLoaded', () => {
+        initMap();
+    
+        // ✅ thêm dòng này
+        setTimeout(() => {
+            initToolbar();
+        }, 100);
+    
         initOfficersFromInitial();
         initAudio();
+    
         setTimeout(() => {
             initAllTracks();
         }, 1000);
