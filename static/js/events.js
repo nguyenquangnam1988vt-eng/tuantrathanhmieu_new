@@ -1,5 +1,3 @@
-// static/js/events.js
-
 // ==================== MARKERS (điểm đánh dấu) ====================
 const markersRootRef = ref(db, 'markers');
 onChildAdded(markersRootRef, (userSnapshot) => {
@@ -229,22 +227,8 @@ function showPointDialog(latlng) {
                         note: note
                     };
                     push(ref(db, 'move_orders'), orderData);
-                    
-                    // 🔥 GHI LOG ĐIỀU HÀNH
-                    const selectName = document.querySelector('#officer-select option:checked')?.text || selectedOfficerUid;
-                    push(ref(db, 'logs'), {
-                        commander: myName,
-                        commanderId: myUsername,
-                        targetId: selectedOfficerUid,
-                        targetName: selectName,
-                        lat: latlng.lat,
-                        lng: latlng.lng,
-                        time: Date.now(),
-                        action: 'move_order',
-                        note: note
-                    });
-                    
                     const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
+                    const selectName = document.querySelector('#officer-select option:checked')?.text;
                     tempMarker.bindPopup(`📍 Đã ra lệnh cho ${selectName}`).openPopup();
                     setTimeout(() => map.removeLayer(tempMarker), 5000);
                 }
@@ -324,20 +308,6 @@ if (userRole === 'commander' || userRole === 'admin') {
                         note: ""
                     };
                     push(ref(db, 'move_orders'), orderData);
-                    
-                    // 🔥 GHI LOG ĐIỀU HÀNH
-                    push(ref(db, 'logs'), {
-                        commander: myName,
-                        commanderId: myUsername,
-                        targetId: selectedOfficerId,
-                        targetName: selectedOfficerName,
-                        lat: endLat,
-                        lng: endLng,
-                        time: Date.now(),
-                        action: 'move_order',
-                        note: ""
-                    });
-                    
                     const marker = L.marker([endLat, endLng]).addTo(map);
                     marker.bindPopup("📍 Đã chọn điểm (giữ 5s)").openPopup();
                     setTimeout(() => map.removeLayer(marker), 5000);
