@@ -486,7 +486,9 @@
             L.DomEvent.disableClickPropagation(div);
             return div;
         };
-        toolbar.addTo(map);
+        if (map) {
+            toolbar.addTo(map);
+        }
 
         const drawToggle = document.getElementById('draw-toggle');
         const drawFinish = document.getElementById('draw-finish');
