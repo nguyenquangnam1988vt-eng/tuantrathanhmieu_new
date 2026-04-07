@@ -51,7 +51,7 @@ function loadUserTracks(userId, userName, show) {
 }
 
 // Hàm khởi tạo track dựa trên showTracks (gọi sau khi allOfficers đã sẵn sàng)
-function initAllTracks() {
+function initTrackingTracks() {
     Object.entries(showTracks).forEach(([uid, show]) => {
         if (show && allOfficers[uid]) {
             loadUserTracks(uid, allOfficers[uid].name, true);
