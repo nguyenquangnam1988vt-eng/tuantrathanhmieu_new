@@ -214,6 +214,9 @@ with col1:
             st.session_state.sharing = False
             st.rerun()
 
+# ==================== GPS SCRIPT ====================
+# (sẽ được nhúng trong map HTML)
+
 # ==================== SIDEBAR: CÁC CHỨC NĂNG ====================
 st.sidebar.markdown('<div class="sidebar-group"><h3>🚨 ĐIỀU HÀNH</h3></div>', unsafe_allow_html=True)
 with st.sidebar:
@@ -435,44 +438,12 @@ map_html = map_html.replace("<!-- DRAW_JS -->", draw_js)
 map_html = map_html.replace("<!-- TRACKING_JS -->", tracking_js)
 map_html = map_html.replace("<!-- EVENTS_JS -->", events_js)
 
-# ==================== HIỂN THỊ MAP, DASHBOARD VÀ CHAT ====================
+# ==================== HIỂN THỊ MAP VÀ CHAT ====================
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-tab1, tab2, tab3 = st.tabs(["🗺️ Bản đồ", "📊 Thống kê & Nhật ký", "💬 Chat nội bộ"])
+tab1, tab2 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ"])
 with tab1:
     st.components.v1.html(map_html, height=620)
 with tab2:
-    st.subheader("📊 Thống kê hệ thống")
-    col1, col2 = st.columns(2)
-    
-    # Số cán bộ online (dựa trên lastSeen trong 30 giây)
-    officers_data = db.child("officers").get().val()
-    now_ms = int(time.time() * 1000)
-    online_count = 0
-    if officers_data:
-        for uid, info in officers_data.items():
-            last_seen = info.get("lastSeen")
-            if last_seen and (now_ms - last_seen) < 30000:
-                online_count += 1
-    col1.metric("👮 Cán bộ online", online_count)
-    
-    # Số vụ việc (incidents)
-    incidents_data = db.child("incidents").get().val()
-    incident_count = len(incidents_data) if incidents_data else 0
-    col2.metric("📸 Số vụ việc", incident_count)
-    
-    # Nhật ký điều hành
-    st.markdown("### 🧭 Nhật ký điều hành")
-    logs_data = db.child("logs").order_by_child("time").limit_to_last(20).get()
-    if logs_data and logs_data.val():
-        logs_list = sorted(logs_data.val().items(), key=lambda x: x[1]["time"], reverse=True)
-        for key, log in logs_list:
-            dt = datetime.fromtimestamp(log["time"]/1000, tz=timezone(timedelta(hours=7))).strftime("%H:%M:%S %d/%m")
-            st.write(f"🧑‍✈️ **{log.get('commander', '?')}** → 👮 **{log.get('targetName', '?')}** tại ({log.get('lat', 0):.5f}, {log.get('lng', 0):.5f}) lúc {dt}")
-            if log.get('note'):
-                st.caption(f"📝 {log['note']}")
-    else:
-        st.info("Chưa có nhật ký điều hành.")
-with tab3:
     st.subheader("💬 Chat nội bộ")
     cleanup_old_messages()
     messages = get_messages()
