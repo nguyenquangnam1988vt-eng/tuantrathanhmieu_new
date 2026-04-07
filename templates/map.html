@@ -117,10 +117,10 @@
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
     let userRole = {{ user_role }};
-    let showTracks = {{ show_tracks }} || {};
-    let stationaryOfficers = {{ stationary_officers }};
-    let userColors = {{ user_colors }};
-    let initialOfficers = {{ initial_officers }};
+    let showTracks = {{ show_tracks | tojson | safe }};
+    let stationaryOfficers = {{ stationary_officers | tojson | safe }};
+    let userColors = {{ user_colors | tojson | safe }};
+    let initialOfficers = {{ initial_officers | tojson | safe }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
@@ -144,6 +144,11 @@
     const safeInitialOfficers = safeObject(initialOfficers);
     const safeStationaryOfficers = safeArray(stationaryOfficers);
     const safeUserColors = safeObject(userColors);
+    // ⚠️ FIX CRASH BOOLEAN → OBJECT
+    showTracks = safeObject(showTracks);
+    initialOfficers = safeObject(initialOfficers);
+    userColors = safeObject(userColors);
+    stationaryOfficers = safeArray(stationaryOfficers);
     console.log("DEBUG:");
     console.log("showTracks:", showTracks);
     console.log("initialOfficers:", initialOfficers);
@@ -305,6 +310,12 @@
             zoomToBoundsOnClick: true
         });
         map.addLayer(officerClusterGroup);
+
+        /* ===== FIX MAP KHÔNG HIỆN / LỆCH ===== */
+        map.whenReady(() => {
+            setTimeout(() => map.invalidateSize(), 200);
+        });
+        
         map.on('moveend', () => {
             const center = map.getCenter();
             sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
@@ -388,8 +399,8 @@
             },
             {
                 enableHighAccuracy: true,
-                maximumAge: 5000,
-                timeout: 10000
+                maximumAge: 10000,
+                timeout: 20000
             }
         );
     } else {
