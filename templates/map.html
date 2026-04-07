@@ -686,7 +686,8 @@
     }
 
     function initAllTracks() {
-        if (typeof initAllTracks === "function") return; // tránh khai báo trùng
+        // Đảm bảo chỉ khai báo một lần (tránh lỗi trùng)
+        if (typeof initAllTracks === "function") return;
         Object.entries(safeShowTracks).forEach(([uid, show]) => {
             if (show && allOfficers[uid]) loadUserTracks(uid, allOfficers[uid].name, true);
         });
