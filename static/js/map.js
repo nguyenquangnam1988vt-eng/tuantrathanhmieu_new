@@ -1,5 +1,8 @@
+console.log("[Map] Initializing map module");
+
 // ==================== CÁC HÀM VẼ ====================
 function startDrawing() {
+    console.log("[Map] startDrawing");
     tempPoints = [];
     if (tempPolyline) map.removeLayer(tempPolyline);
     map.on('click', onMapClick);
@@ -7,6 +10,7 @@ function startDrawing() {
 }
 
 function cancelDrawing() {
+    console.log("[Map] cancelDrawing");
     map.off('click', onMapClick);
     if (tempPolyline) {
         map.removeLayer(tempPolyline);
@@ -20,9 +24,8 @@ function onMapClick(e) {
     if (!drawingMode) return;
     const { lat, lng } = e.latlng;
     tempPoints.push([lat, lng]);
-
+    console.log(`[Map] Drawing point ${tempPoints.length}: ${lat},${lng}`);
     if (tempPolyline) map.removeLayer(tempPolyline);
-
     tempPolyline = L.polyline(tempPoints, {
         color: drawingColor,
         weight: drawingWeight,
@@ -35,7 +38,7 @@ function saveDrawing() {
         alert("Cần ít nhất 2 điểm để vẽ.");
         return;
     }
-
+    console.log(`[Map] Saving drawing with ${tempPoints.length} points`);
     const drawingData = {
         points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
         color: drawingColor,
@@ -45,25 +48,22 @@ function saveDrawing() {
         timestamp: Date.now(),
         type: 'draw'
     };
-
     push(ref(db, 'drawings'), drawingData);
-
     cancelDrawing();
     drawingMode = false;
-
     const drawToggle = document.getElementById('draw-toggle');
     const drawFinish = document.getElementById('draw-finish');
-
     if (drawToggle) drawToggle.style.background = '';
     if (drawFinish) drawFinish.style.display = 'none';
 }
 
-
 // ==================== KHỞI TẠO TRACKS (ĐÃ FIX) ====================
-// ❗ CHỈ gọi từ tracking.js, không dùng initAllTracks nữa
-
+// Chú ý: Hàm initTrackingTracks được định nghĩa trong tracking.js
 setTimeout(() => {
     if (typeof initTrackingTracks === 'function') {
+        console.log("[Map] Calling initTrackingTracks");
         initTrackingTracks();
+    } else {
+        console.warn("[Map] initTrackingTracks not found");
     }
 }, 1000);
