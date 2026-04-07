@@ -57,13 +57,3 @@ function saveDrawing() {
     if (drawToggle) drawToggle.style.background = '';
     if (drawFinish) drawFinish.style.display = 'none';
 }
-
-
-// ==================== KHỞI TẠO TRACKS (ĐÃ FIX) ====================
-// ❗ CHỈ gọi từ tracking.js, không dùng initAllTracks nữa
-
-setTimeout(() => {
-    if (typeof initTrackingTracks === 'function') {
-        initTrackingTracks();
-    }
-}, 1000);
