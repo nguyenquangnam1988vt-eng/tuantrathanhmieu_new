@@ -12,16 +12,8 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
-        /* Đảm bảo map chiếm toàn bộ khung */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-        #map {
-            height: 100%;
-            width: 100%;
-        }
+        /* ... giữ nguyên style ... */
+        #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
         .alert-marker { width: 24px; height: 24px; background: red; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px red; animation: pulse 1s infinite; }
@@ -53,6 +45,7 @@
         .clear-orders-btn { position: absolute; top: 10px; right: 10px; background: #ff8800; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; z-index: 1000; font-size: 14px; font-weight: bold; }
         .drawing-toolbar button { cursor: pointer; border: none; border-radius: 4px; font-size: 14px; margin: 2px; padding: 4px 8px; }
         .drawing-toolbar button:hover { opacity: 0.8; }
+        .drawing-info { background: white; padding: 5px 10px; border-radius: 8px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
     </style>
 </head>
@@ -60,10 +53,9 @@
 <div id="map"></div>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, set, update, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // ========== NHẬN DỮ LIỆU TỪ PYTHON ==========
     const firebaseConfig = {{ firebase_config }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
@@ -71,24 +63,26 @@
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    const userRole = {{ user_role }};
-    const showTracks = {{ show_tracks }};
-    const stationaryOfficers = {{ stationary_officers }};
-    const userColors = {{ user_colors }};
-    const initialOfficers = {{ initial_officers }};
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // ========== HÀM AN TOÀN KIỂU DỮ LIỆU ==========
+    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
+
     const safeShowTracks = safeObject(showTracks);
     const safeInitialOfficers = safeObject(initialOfficers);
     const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
     const safeUserColors = safeObject(userColors);
+    if (typeof userRole !== 'string') userRole = 'officer';
 
-    // ========== BIẾN TOÀN CỤC ==========
+    // Biến toàn cục
     let map = null;
     let officerClusterGroup = null;
     let allOfficers = {};
@@ -119,10 +113,8 @@
     let arrowTempLine = null;
     let drawingLayers = {};
     let userDragging = false;
-    let watchId = null;
-    let sharingEnabled = false;
 
-    // ========== HÀM TIỆN ÍCH ==========
+    // Các hàm tiện ích
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -198,13 +190,9 @@
 
     function updateOfficerMarker(uid, officer) {
         if (!map || !officerClusterGroup) return;
-        if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-
         const latlng = [officer.lat, officer.lng];
         const lastUpdate = officer.lastUpdate || 0;
         const color = getOfficerColorWithStatus(uid, lastUpdate);
-
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
@@ -224,55 +212,6 @@
         }
     }
 
-    // ========== CHIA SẺ VỊ TRÍ (BẬT/TẮT QUA NODE 'sharing') ==========
-    function startSharing() {
-        if (watchId !== null) return;
-        console.log("Bắt đầu chia sẻ vị trí");
-        watchId = navigator.geolocation.watchPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                if (!isValidVNCoordinate(lat, lng)) return;
-                const data = {
-                    lat: lat,
-                    lng: lng,
-                    name: myName,
-                    lastUpdate: Date.now()
-                };
-                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
-                allOfficers[myUsername] = data;
-                updateOfficerMarker(myUsername, data);
-            },
-            (error) => console.error("GPS error:", error),
-            { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-        );
-    }
-
-    function stopSharing() {
-        if (watchId !== null) {
-            navigator.geolocation.clearWatch(watchId);
-            watchId = null;
-            console.log("Dừng chia sẻ vị trí");
-        }
-        remove(ref(db, 'officers/' + myUsername)).catch(console.error);
-        delete allOfficers[myUsername];
-        removeOfficerMarker(myUsername);
-    }
-
-    // Lắng nghe trạng thái sharing từ Firebase (do Python cập nhật)
-    const sharingRef = ref(db, 'sharing/' + myUsername);
-    onValue(sharingRef, (snapshot) => {
-        const sharing = snapshot.val();
-        if (sharing === true && !sharingEnabled) {
-            sharingEnabled = true;
-            startSharing();
-        } else if (sharing !== true && sharingEnabled) {
-            sharingEnabled = false;
-            stopSharing();
-        }
-    });
-
-    // ========== KHỞI TẠO BẢN ĐỒ (gọi sau khi DOM load) ==========
     function initMap() {
         const savedCenter = sessionStorage.getItem('mapCenter');
         const savedZoom = sessionStorage.getItem('mapZoom');
@@ -306,7 +245,7 @@
         map.on('dragend', () => userDragging = false);
         map.on('zoomstart', () => userDragging = true);
         map.on('zoomend', () => userDragging = false);
-
+        
         if (navigator.geolocation && !sessionStorage.getItem('zoomedToMe')) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -322,22 +261,7 @@
         }
     }
 
-    // ========== FCM FOREGROUND ==========
-    if (fcmVapidKey !== "") {
-        onMessage(messaging, payload => {
-            if (Notification.permission === 'granted') {
-                new Notification(payload.notification.title, { body: payload.notification.body });
-            }
-        });
-        const requestNotificationPermission = () => {
-            if (Notification.permission !== 'granted') {
-                Notification.requestPermission();
-            }
-        };
-        document.body.addEventListener('click', requestNotificationPermission, { once: true });
-    }
-
-    // ========== NOSLEEP ==========
+    // NoSleep
     let noSleep = new NoSleep();
     function enableNoSleep() {
         noSleep.enable();
@@ -347,17 +271,71 @@
     document.addEventListener('click', enableNoSleep);
     document.addEventListener('touchstart', enableNoSleep);
 
-    // ========== KHỞI TẠO OFFICERS TỪ INITIAL (sau khi map sẵn sàng) ==========
-    function initOfficersFromInitial() {
-        for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
-            if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
-                allOfficers[uid] = officer;
-                updateOfficerMarker(uid, officer);
+    // FCM foreground only
+    if (fcmVapidKey !== "") {
+        onMessage(messaging, payload => {
+            if (Notification.permission === 'granted') {
+                new Notification(payload.notification.title, { body: payload.notification.body });
+            } else {
+                console.log("Notification permission not granted");
             }
+        });
+        const requestNotificationPermission = () => {
+            if (Notification.permission !== 'granted') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') console.log("Notification permission granted");
+                });
+            }
+        };
+        document.body.addEventListener('click', requestNotificationPermission, { once: true });
+    }
+
+    initMap();
+    initAudio();
+    document.addEventListener("click", () => {
+        if (!audioActivated && alertSound) {
+            alertSound.load();
+            audioActivated = true;
+        }
+    });
+
+    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                if (!isValidVNCoordinate(lat, lng)) return;
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now()
+                };
+                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+            },
+            (error) => {
+                console.error("GPS error:", error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 10000
+            }
+        );
+    } else {
+        console.warn("Geolocation not supported");
+    }
+
+    // Khởi tạo officers từ safeInitialOfficers
+    for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            allOfficers[uid] = officer;
+            updateOfficerMarker(uid, officer);
         }
     }
 
-    // ========== LẮNG NGHE REALTIME FIREBASE ==========
+    // Real-time listeners
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -369,7 +347,7 @@
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         allOfficers[id] = officer;
         updateOfficerMarker(id, officer);
-        if (id === myUsername && !sessionStorage.getItem('zoomedToMe') && officer.lat && officer.lng) {
+        if (id === myUsername && !sessionStorage.getItem('zoomedToMe')) {
             map.setView([officer.lat, officer.lng], 16);
             sessionStorage.setItem('zoomedToMe', 'true');
         }
@@ -393,7 +371,7 @@
 
     // Stationary officers
     safeStationaryOfficers.forEach(officer => {
-        if (isValidVNCoordinate(officer.lat, officer.lng)) {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
             L.circleMarker([officer.lat, officer.lng], {
                 radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
                 renderer: L.canvas()
@@ -401,25 +379,12 @@
         }
     });
 
-    // ========== NHÚNG CÁC MODULE JS RIÊNG ==========
-    // (Các file này phải được đặt trong thư mục static/js và được import theo thứ tự)
-    import alertsModule from '/static/js/alerts.js';
-    import drawModule from '/static/js/draw.js';
-    import trackingModule from '/static/js/tracking.js';
-    import eventsModule from '/static/js/events.js';
-    import mapModule from '/static/js/map.js';
-
-    // Các module này sẽ sử dụng các biến toàn cục đã khai báo (map, db, allOfficers, ...)
-    // và tự động đăng ký các sự kiện, listeners.
-
-    // Khởi tạo map và toàn bộ sau khi DOM load
-    document.addEventListener('DOMContentLoaded', () => {
-        initMap();
-        initOfficersFromInitial();
-        initAudio();
-        // Các module sẽ tự chạy khi import, nhưng cần đảm bảo map đã sẵn sàng
-        // Nếu cần, có thể gọi hàm khởi tạo từ module (tuỳ theo cách export)
-    });
+    // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
+    <!-- ALERTS_JS -->
+    <!-- DRAW_JS -->
+    <!-- TRACKING_JS -->
+    <!-- EVENTS_JS -->
+    <!-- MAP_JS -->
 </script>
 </body>
 </html>
