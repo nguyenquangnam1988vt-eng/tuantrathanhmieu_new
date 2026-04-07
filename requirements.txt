@@ -4,3 +4,6 @@ firebase-admin
 pyrebase4
 requests
 PyYAML
+scikit-learn
+folium 
+streamlit-folium
