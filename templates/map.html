@@ -34,6 +34,10 @@
         .drawing-toolbar button { cursor: pointer; border: none; border-radius: 4px; font-size: 14px; margin: 2px; padding: 4px 8px; }
         .drawing-toolbar button:hover { opacity: 0.8; }
         .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
+        .legend { background: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+        .legend span { display: inline-block; width: 20px; height: 4px; margin-right: 6px; vertical-align: middle; }
+        .legend .arrow { background: red; border-top: 2px solid red; }
+        .legend .move { background: #ff8800; border-top: 2px dashed #ff8800; }
     </style>
 </head>
 <body>
@@ -44,34 +48,45 @@
         console.error("🔥 GLOBAL ERROR:", e.error);
     });
 
+    // Kiểm tra thư viện Leaflet
+    if (typeof L === 'undefined') {
+        alert("Lỗi: Leaflet chưa được tải. Vui lòng kiểm tra kết nối mạng.");
+        throw new Error("Leaflet not loaded");
+    }
+    if (typeof L.markerClusterGroup !== 'function') {
+        console.warn("Leaflet.markercluster chưa được tải, sẽ không dùng clustering.");
+    }
+
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, set, update, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getDatabase, ref, set, update, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, push, onDisconnect, get, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // ========== DỮ LIỆU MẪU (THAY BẰNG FLASK SAU) ==========
-    // Bạn có thể thay các object này bằng {{ firebase_config | tojson }} khi chạy Flask
+    // ==================== THAY CẤU HÌNH FIREBASE THẬT CỦA BẠN VÀO ĐÂY ====================
+    // Hướng dẫn: Vào Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration
+    // Copy toàn bộ object firebaseConfig và thay vào dưới đây.
     const firebaseConfig = {
-        apiKey: "AIzaSyDummyKey_Do_Not_Use_Real",
+        apiKey: "AIzaSyDummyKey_Do_Not_Use_Real",   // ⚠️ THAY BẰNG API KEY THẬT
         authDomain: "your-project.firebaseapp.com",
         databaseURL: "https://your-project-default-rtdb.firebaseio.com",
         projectId: "your-project",
         storageBucket: "your-project.appspot.com",
         messagingSenderId: "123456789012",
         appId: "1:123456789012:web:abc123def456"
-    }; // ⚠️ THAY BẰNG CONFIG THẬT CỦA BẠN
+    };
+    // =====================================================================================
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const messaging = getMessaging(app);
 
-    // Dữ liệu người dùng mẫu
+    // Dữ liệu người dùng (nếu chạy qua Flask, thay bằng {{ ... | tojson }})
     const myUsername = "user_demo";
     const myName = "Người dùng demo";
-    const userRole = "admin";        // Thử "officer" hoặc "admin"
-    const showTracks = {};           // Ví dụ: { "user1": true }
-    const stationaryOfficers = [];    // Mảng các officer đứng yên
-    const userColors = {};            // { "user1": "#ff0000" }
-    const initialOfficers = {};       // { "user1": { lat: 16.0, lng: 108.0, name: "A", lastUpdate: Date.now() } }
+    const userRole = "admin";        // "officer" hoặc "admin" hoặc "commander"
+    const showTracks = {};
+    const stationaryOfficers = [];
+    const userColors = {};
+    const initialOfficers = {};
     const alertSoundBase64 = "";      // Để trống nếu không có file âm thanh
     const fcmVapidKey = "";
 
@@ -150,8 +165,11 @@
 
     function initAudio() {
         if (alertSound) return;
-    
-        alertSound = new Audio("/static/sounds/alert.mp3"); // 👈 đường dẫn file
+        if (!alertSoundBase64) {
+            console.warn("Không có file âm thanh báo động");
+            return;
+        }
+        alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
         alertSound.preload = "auto";
         alertSound.loop = false;
     }
@@ -199,16 +217,18 @@
         const latlng = [officer.lat, officer.lng];
         const lastUpdate = officer.lastUpdate || 0;
         const color = getOfficerColorWithStatus(uid, lastUpdate);
-        if (officerMarkers[uid]) {
-            officerMarkers[uid].setLatLng(latlng);
-            officerMarkers[uid].setIcon(createOfficerIcon(color));
-            officerMarkers[uid].setTooltipContent(officer.name || uid);
-        } else {
-            const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
-            marker.bindTooltip(officer.name || uid, { permanent: true, direction: 'top', offset: [0, -12] });
-            officerClusterGroup.addLayer(marker);
-            officerMarkers[uid] = marker;
-        }
+        try {
+            if (officerMarkers[uid]) {
+                officerMarkers[uid].setLatLng(latlng);
+                officerMarkers[uid].setIcon(createOfficerIcon(color));
+                officerMarkers[uid].setTooltipContent(officer.name || uid);
+            } else {
+                const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
+                marker.bindTooltip(officer.name || uid, { permanent: true, direction: 'top', offset: [0, -12] });
+                officerClusterGroup.addLayer(marker);
+                officerMarkers[uid] = marker;
+            }
+        } catch(e) { console.error("updateOfficerMarker error:", e); }
     }
 
     function removeOfficerMarker(uid) {
@@ -221,6 +241,7 @@
     // ========== CHIA SẺ VỊ TRÍ ==========
     function startSharing() {
         if (watchId !== null) return;
+        if (!navigator.geolocation) { console.warn("Geolocation không hỗ trợ"); return; }
         console.log("Bắt đầu chia sẻ vị trí");
         watchId = navigator.geolocation.watchPosition(
             (position) => {
@@ -266,68 +287,80 @@
         }
     });
 
-    // ========== KHỞI TẠO BẢN ĐỒ (ĐÃ GẮN SỰ KIỆN TRONG NÀY) ==========
+    // ========== KHỞI TẠO BẢN ĐỒ ==========
     function initMap() {
-        const savedCenter = sessionStorage.getItem('mapCenter');
-        const savedZoom = sessionStorage.getItem('mapZoom');
-        if (savedCenter && savedZoom) {
-            map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
-                .setView(JSON.parse(savedCenter), parseInt(savedZoom));
-        } else {
-            map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
-                .setView([16.047079, 108.206230], 6);
-        }
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            updateWhenZooming: false
-        }).addTo(map);
-        officerClusterGroup = L.markerClusterGroup({
-            chunkedLoading: true, maxClusterRadius: 80, spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false, zoomToBoundsOnClick: true
-        });
-        map.addLayer(officerClusterGroup);
-        map.on('moveend', () => {
-            const center = map.getCenter();
-            sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
-            sessionStorage.setItem('mapZoom', map.getZoom());
-        });
-        map.on('dragstart', () => userDragging = true);
-        map.on('dragend', () => userDragging = false);
-        map.on('zoomstart', () => userDragging = true);
-        map.on('zoomend', () => userDragging = false);
+        try {
+            const savedCenter = sessionStorage.getItem('mapCenter');
+            const savedZoom = sessionStorage.getItem('mapZoom');
+            if (savedCenter && savedZoom) {
+                map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
+                    .setView(JSON.parse(savedCenter), parseInt(savedZoom));
+            } else {
+                map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
+                    .setView([16.047079, 108.206230], 6);
+            }
+            console.log("Map created:", map);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 20,
+                updateWhenZooming: false
+            }).addTo(map);
 
-        // ========== SỰ KIỆN CONTEXT MENU & TOUCH ==========
-        map.on('contextmenu', (e) => {
-            if (selectionMode || drawingMode || arrowMode) return;
-            e.originalEvent.preventDefault();
-            showPointDialog(e.latlng);
-        });
+            // Tạo cluster group (nếu thiếu thư viện thì dùng null)
+            if (typeof L.markerClusterGroup === 'function') {
+                officerClusterGroup = L.markerClusterGroup({
+                    chunkedLoading: true, maxClusterRadius: 80, spiderfyOnMaxZoom: true,
+                    showCoverageOnHover: false, zoomToBoundsOnClick: true
+                });
+                map.addLayer(officerClusterGroup);
+            } else {
+                officerClusterGroup = { addLayer: (l) => map.addLayer(l), removeLayer: (l) => map.removeLayer(l) };
+                console.warn("MarkerCluster không khả dụng, các marker sẽ không được gom cụm.");
+            }
 
-        let touchTimer = null;
-        map.on('touchstart', (e) => {
-            if (selectionMode || drawingMode || arrowMode) return;
-            const touch = e.originalEvent.touches[0];
-            const latlng = map.mouseEventToLatLng(touch);
-            touchTimer = setTimeout(() => showPointDialog(latlng), 800);
-        });
-        map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
-        map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
+            map.on('moveend', () => {
+                const center = map.getCenter();
+                sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
+                sessionStorage.setItem('mapZoom', map.getZoom());
+            });
+            map.on('dragstart', () => userDragging = true);
+            map.on('dragend', () => userDragging = false);
+            map.on('zoomstart', () => userDragging = true);
+            map.on('zoomend', () => userDragging = false);
 
-        // Zoom về vị trí hiện tại nếu có GPS
-        if (navigator.geolocation && !sessionStorage.getItem('zoomedToMe')) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const { latitude: lat, longitude: lng } = position.coords;
-                    if (isValidVNCoordinate(lat, lng)) {
-                        map.setView([lat, lng], 16);
-                        sessionStorage.setItem('zoomedToMe', 'true');
-                    }
-                },
-                (error) => console.warn("GPS fallback error:", error),
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
+            // Contextmenu và touch
+            map.on('contextmenu', (e) => {
+                if (selectionMode || drawingMode || arrowMode) return;
+                e.originalEvent.preventDefault();
+                showPointDialog(e.latlng);
+            });
+
+            let touchTimer = null;
+            map.on('touchstart', (e) => {
+                if (selectionMode || drawingMode || arrowMode) return;
+                const touch = e.originalEvent.touches[0];
+                const latlng = map.mouseEventToLatLng(touch);
+                touchTimer = setTimeout(() => showPointDialog(latlng), 800);
+            });
+            map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
+            map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
+
+            if (navigator.geolocation && !sessionStorage.getItem('zoomedToMe')) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude: lat, longitude: lng } = position.coords;
+                        if (isValidVNCoordinate(lat, lng)) {
+                            map.setView([lat, lng], 16);
+                            sessionStorage.setItem('zoomedToMe', 'true');
+                        }
+                    },
+                    (error) => console.warn("GPS fallback error:", error),
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            }
+        } catch(e) {
+            console.error("Lỗi khởi tạo map:", e);
         }
     }
 
@@ -410,7 +443,7 @@
                 });
             }
             if (heatLayer) map.removeLayer(heatLayer);
-            if (heatPoints.length) {
+            if (heatPoints.length && typeof L.heatLayer === 'function') {
                 heatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15, maxZoom: 17 });
                 heatLayer.addTo(map);
             }
@@ -502,7 +535,7 @@
     });
     onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
 
-    // ========== DRAW (VẼ) ==========
+    // ========== VẼ (DRAW) CHO COMMANDER/ADMIN ==========
     function initDrawingToolbar() {
         if (userRole !== 'commander' && userRole !== 'admin') return;
         if (!map) return;
@@ -512,7 +545,7 @@
             const div = L.DomUtil.create('div', 'drawing-toolbar');
             div.innerHTML = `
                 <div style="background:white; padding:8px; border-radius:8px;">
-                    <button id="draw-toggle" style="margin:2px;">✏️ Vẽ</button>
+                    <button id="draw-toggle" style="margin:2px;">✏️ Vẽ sơ đồ</button>
                     <button id="draw-finish" style="display:none; margin:2px;">✅ Xong</button>
                     <div style="margin-top:5px;">
                         Màu: <input type="color" id="draw-color" value="#ff0000" style="width:30px;">
@@ -605,7 +638,7 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
-    // ========== ARROW TOOLBAR (CHỈ OFFICER) ==========
+    // ========== BÁO HƯỚNG ĐỐI TƯỢNG (CHỈ OFFICER) ==========
     function initArrowToolbar() {
         if (userRole !== 'officer' || !map) return;
 
@@ -708,8 +741,9 @@
         }).addTo(map);
         if (drawing.type === 'arrow' && polyline.arrowheads) polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
+        if (drawing.type === 'arrow') popupContent = `🚨 Báo hướng từ ${drawing.author}<br>` + popupContent;
         const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
-        if (canDelete) popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa nét vẽ</button>`;
+        if (canDelete) popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa</button>`;
         polyline.bindPopup(popupContent);
         drawingLayers[id] = polyline;
     });
@@ -725,7 +759,7 @@
         });
     });
 
-    // ========== TRACKS (LỊCH SỬ DI CHUYỂN) ==========
+    // ========== TRACKS ==========
     function loadUserTracks(userId, userName, show) {
         const tracksRef = ref(db, 'tracks/' + userId + '/points');
         const tracksQuery = query(tracksRef, limitToLast(30));
@@ -819,7 +853,7 @@
     });
     onChildRemoved(incidentsRef, (data) => { const id = data.key; if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } });
 
-    // ========== MOVE ORDERS ==========
+    // ========== MOVE ORDERS (LỆNH DI CHUYỂN) ==========
     const moveOrdersRef = ref(db, 'move_orders');
     onChildAdded(moveOrdersRef, (snapshot) => {
         const order = snapshot.val();
@@ -830,7 +864,7 @@
         const polyline = L.polyline(latlngs, { color: '#ff8800', weight: 4, opacity: 0.8, dashArray: '5, 10', renderer: L.canvas() }).addTo(map);
         if (polyline.arrowheads) polyline.arrowheads({ size: '12px', frequency: 'all', color: '#ff8800' });
         const officerName = allOfficers[order.officerId]?.name || order.officerId;
-        let popupContent = `📍 Lệnh di chuyển<br>Từ: ${order.commanderName}<br>Đến: ${officerName}<br>Điểm đến: ${order.toLat.toFixed(6)}, ${order.toLng.toFixed(6)}<br>Ghi chú: ${order.note || 'không'}`;
+        let popupContent = `📍 LỆNH DI CHUYỂN<br>Từ: ${order.commanderName}<br>Đến: ${officerName}<br>Điểm đến: ${order.toLat.toFixed(6)}, ${order.toLng.toFixed(6)}<br>Ghi chú: ${order.note || 'không'}`;
         const canCancel = (order.commanderId === myUsername) || (userRole === 'commander') || (userRole === 'admin');
         if (canCancel) popupContent += `<br><button class="delete-btn" data-orderid="${orderId}">❌ Huỷ lệnh</button>`;
         polyline.bindPopup(popupContent);
@@ -867,7 +901,7 @@
 
     if (userRole === 'commander' || userRole === 'admin') {
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = '🗑️ Xoá tất cả nét vẽ di chuyển và vẽ sơ đồ';
+        clearBtn.textContent = '🗑️ Xoá tất cả lệnh di chuyển';
         clearBtn.className = 'clear-orders-btn';
         clearBtn.onclick = async () => {
             if (confirm('Bạn có chắc muốn xoá TOÀN BỘ lệnh di chuyển đang hoạt động?')) {
@@ -895,7 +929,7 @@
         if (userRole === 'officer') {
             dialog.innerHTML = `<h4>📍 Đánh dấu điểm</h4><input type="text" id="point-note" placeholder="Ghi chú (bắt buộc)" /><div style="margin-top:12px;"><button id="dialog-ok">Đánh dấu</button><button id="dialog-cancel">Hủy</button></div>`;
         } else {
-            dialog.innerHTML = `<h4>📍 Tùy chọn tại điểm</h4><input type="text" id="point-note" placeholder="Ghi chú (bắt buộc nếu đánh dấu điểm)" /><select id="officer-select"><option value="">-- Chọn cán bộ để ra lệnh (không chọn = đánh dấu điểm) --</option></select><div style="margin-top:12px;"><button id="dialog-ok">Xác nhận</button><button id="dialog-cancel">Hủy</button></div>`;
+            dialog.innerHTML = `<h4>📍 Tùy chọn tại điểm</h4><input type="text" id="point-note" placeholder="Ghi chú (bắt buộc nếu đánh dấu điểm)" /><select id="officer-select"><option value="">-- Chọn cán bộ để ra lệnh di chuyển --</option></select><div style="margin-top:12px;"><button id="dialog-ok">Xác nhận</button><button id="dialog-cancel">Hủy</button></div>`;
         }
         document.body.appendChild(dialog);
         if (userRole !== 'officer') {
@@ -944,7 +978,7 @@
                             action: 'move_order', note: note
                         });
                         const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
-                        tempMarker.bindPopup(`📍 Đã ra lệnh cho ${selectName}`).openPopup();
+                        tempMarker.bindPopup(`📍 Đã ra lệnh di chuyển cho ${selectName}`).openPopup();
                         setTimeout(() => map.removeLayer(tempMarker), 5000);
                     }
                 }
@@ -1030,14 +1064,32 @@
         }
     }
 
+    // ========== THÊM CHÚ GIẢI (LEGEND) ==========
+    function addLegend() {
+        const legend = L.control({ position: 'bottomleft' });
+        legend.onAdd = () => {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = `
+                <strong>Chú giải</strong><br>
+                <span class="arrow" style="background:red; display:inline-block; width:20px; height:3px;"></span> Báo hướng đối tượng (officer)<br>
+                <span class="move" style="background:#ff8800; display:inline-block; width:20px; height:3px; border-top:2px dashed #ff8800;"></span> Lệnh di chuyển (chỉ huy)<br>
+                <span style="background:#ffaa00; width:12px; height:12px; border-radius:50%; display:inline-block;"></span> Điểm đánh dấu<br>
+                <span style="background:red; width:14px; height:14px; border-radius:50%; display:inline-block;"></span> Báo động
+            `;
+            return div;
+        };
+        legend.addTo(map);
+    }
+
     // ========== KHỞI CHẠY ỨNG DỤNG ==========
     document.addEventListener('DOMContentLoaded', () => {
-        initMap();           // map được tạo và gắn sự kiện contextmenu/touch bên trong
+        initMap();   // map và các sự kiện được tạo trong này
 
         setTimeout(() => {
-            initDrawingToolbar();   // toolbar vẽ cho commander/admin
-            initArrowToolbar();     // toolbar báo hướng cho officer
-            initRealtime();         // lắng nghe dữ liệu realtime
+            initDrawingToolbar();   // vẽ sơ đồ cho commander/admin
+            initArrowToolbar();     // báo hướng cho officer
+            initRealtime();         // realtime data
+            addLegend();            // thêm chú giải
         }, 100);
 
         initOfficersFromInitial();
