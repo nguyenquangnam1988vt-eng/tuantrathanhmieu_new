@@ -261,7 +261,6 @@ with st.sidebar:
 st.sidebar.markdown('<div class="sidebar-group"><h3>📍 TÁC VỤ CÁ NHÂN</h3></div>', unsafe_allow_html=True)
 with st.sidebar:
     with st.expander("📍 Đánh dấu điểm"):
-        logger.info(f"{username} added marker at {current['lat']}, {current['lng']}")
         note = st.text_area("Ghi chú")
         if st.button("Thêm điểm tại vị trí hiện tại"):
             current = db.child("officers").child(username).get().val()
@@ -275,6 +274,7 @@ with st.sidebar:
                 }
                 db.child("markers").child(username).push(marker_data)
                 st.success("Đã thêm điểm")
+                logger.info(f"{username} added marker at {current['lat']}, {current['lng']}")
             else:
                 st.warning("Chưa chia sẻ vị trí hợp lệ hoặc ghi chú trống")
 
