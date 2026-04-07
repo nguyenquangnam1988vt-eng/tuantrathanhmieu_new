@@ -1,5 +1,9 @@
+console.log("[Events] Initializing events module");
+
 // ==================== MARKERS (điểm đánh dấu) ====================
 const markersRootRef = ref(db, 'markers');
+console.log("[Events] Listening for markers");
+
 onChildAdded(markersRootRef, (userSnapshot) => {
     const userId = userSnapshot.key;
     const userMarkersRef = ref(db, `markers/${userId}`);
@@ -11,6 +15,7 @@ onChildAdded(markersRootRef, (userSnapshot) => {
         const age = Date.now() - point.timestamp;
         if (age > 24*60*60*1000) { remove(ref(db, `markers/${userId}/${markerId}`)); return; }
         if (isValidVNCoordinate(point.lat, point.lng)) {
+            console.log(`[Events] New marker from ${point.created_by} at ${point.lat},${point.lng}`);
             const marker = L.circleMarker([point.lat, point.lng], {
                 radius: 6, color: '#ffaa00', fillColor: '#ffaa00', fillOpacity: 0.8, weight: 1,
                 renderer: L.canvas()
@@ -28,6 +33,7 @@ onChildAdded(markersRootRef, (userSnapshot) => {
         const markerId = markerSnapshot.key;
         const fullId = `${userId}_${markerId}`;
         if (pointMarkers[fullId]) {
+            console.log(`[Events] Marker removed: ${fullId}`);
             map.removeLayer(pointMarkers[fullId]);
             delete pointMarkers[fullId];
         }
@@ -37,6 +43,8 @@ onChildAdded(markersRootRef, (userSnapshot) => {
 // ==================== INCIDENTS (ảnh hiện trường) ====================
 const incidentsRef = ref(db, 'incidents');
 const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
+console.log("[Events] Listening for incidents");
+
 onChildAdded(incidentsRef, (data) => {
     const inc = data.val();
     const id = data.key;
@@ -44,20 +52,28 @@ onChildAdded(incidentsRef, (data) => {
     const age = Date.now() - inc.timestamp;
     if (age > 24*60*60*1000) { remove(ref(db, 'incidents/' + id)); return; }
     if (isValidVNCoordinate(inc.lat, inc.lng)) {
+        console.log(`[Events] New incident from ${inc.created_by} at ${inc.lat},${inc.lng}`);
         const marker = L.marker([inc.lat, inc.lng], { icon: incidentIcon }).addTo(map)
             .bindPopup(`<b>${inc.created_by || 'Unknown'}</b><br> ${inc.note || ''}<br> <img src="${inc.image_url}" style="max-width:200px; max-height:200px;"><br> ${new Date(inc.timestamp).toLocaleString()}`);
         incidentMarkers[id] = marker;
     }
 });
-onChildRemoved(incidentsRef, (data) => { const id = data.key; if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } });
+onChildRemoved(incidentsRef, (data) => { 
+    const id = data.key;
+    console.log(`[Events] Incident removed: ${id}`);
+    if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } 
+});
 
 // ==================== MOVE ORDERS ====================
 const moveOrdersRef = ref(db, 'move_orders');
+console.log("[Events] Listening for move orders");
+
 onChildAdded(moveOrdersRef, (snapshot) => {
     const order = snapshot.val();
     const orderId = snapshot.key;
     if (!order || order.status !== 'active') return;
     if (!isValidVNCoordinate(order.toLat, order.toLng)) return;
+    console.log(`[Events] New move order ${orderId} from ${order.commanderName} to ${order.officerId}`);
     const latlngs = [[order.fromLat, order.fromLng], [order.toLat, order.toLng]];
     const polyline = L.polyline(latlngs, {
         color: '#ff8800', weight: 4, opacity: 0.8, dashArray: '5, 10',
@@ -78,11 +94,13 @@ onChildAdded(moveOrdersRef, (snapshot) => {
 });
 onChildRemoved(moveOrdersRef, (snapshot) => {
     const orderId = snapshot.key;
+    console.log(`[Events] Move order removed: ${orderId}`);
     if (moveOrderLines[orderId]) {
         map.removeLayer(moveOrderLines[orderId]);
         delete moveOrderLines[orderId];
     }
 });
+
 function checkOrdersCompletion() {
     get(moveOrdersRef).then((snapshot) => {
         const orders = snapshot.val() || {};
@@ -92,6 +110,7 @@ function checkOrdersCompletion() {
             if (!officerPos) continue;
             const dist = haversine(officerPos.lat, officerPos.lng, order.toLat, order.toLng);
             if (dist < 20) {
+                console.log(`[Events] Move order ${orderId} completed, removing`);
                 remove(ref(db, 'move_orders/' + orderId));
             }
         }
@@ -104,6 +123,7 @@ function zoomToAllOfficers() {
     if (officersList.length === 0) return;
     const bounds = L.latLngBounds(officersList.map(o => [o.lat, o.lng]));
     map.fitBounds(bounds, { padding: [50, 50], animate: false });
+    console.log(`[Events] Zoomed to ${officersList.length} officers`);
 }
 setTimeout(zoomToAllOfficers, 2000);
 
@@ -114,6 +134,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     clearBtn.className = 'clear-orders-btn';
     clearBtn.onclick = async () => {
         if (confirm('Bạn có chắc muốn xoá TOÀN BỘ lệnh di chuyển đang hoạt động?')) {
+            console.log("[Events] Clearing all move orders");
             await remove(moveOrdersRef);
             Object.keys(moveOrderLines).forEach(orderId => {
                 if (moveOrderLines[orderId]) {
@@ -130,6 +151,7 @@ if (userRole === 'commander' || userRole === 'admin') {
 // ==================== DIALOG THÊM ĐIỂM ====================
 function showPointDialog(latlng) {
     if (drawingMode || arrowMode) return;
+    console.log(`[Events] Show point dialog at ${latlng.lat},${latlng.lng}`);
     const oldOverlay = document.getElementById('dialog-overlay');
     if (oldOverlay) oldOverlay.remove();
     const overlay = document.createElement('div');
@@ -189,6 +211,7 @@ function showPointDialog(latlng) {
                 return;
             }
             if (userRole === 'officer') {
+                console.log(`[Events] Officer adding marker with note: ${note}`);
                 push(ref(db, 'markers/' + myUsername), {
                     created_by: myName,
                     lat: latlng.lat,
@@ -199,6 +222,7 @@ function showPointDialog(latlng) {
             } else {
                 const selectedOfficerUid = document.getElementById('officer-select')?.value;
                 if (!selectedOfficerUid) {
+                    console.log(`[Events] Commander adding marker with note: ${note}`);
                     push(ref(db, 'markers/' + myUsername), {
                         created_by: myName,
                         lat: latlng.lat,
@@ -226,6 +250,7 @@ function showPointDialog(latlng) {
                         status: 'active',
                         note: note
                     };
+                    console.log(`[Events] Commander creating move order to ${selectedOfficerUid} at (${latlng.lat},${latlng.lng})`);
                     push(ref(db, 'move_orders'), orderData);
                     const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
                     const selectName = document.querySelector('#officer-select option:checked')?.text;
@@ -264,12 +289,14 @@ map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
 
 // ==================== RA LỆNH TỪ SIDEBAR ====================
 if (userRole === 'commander' || userRole === 'admin') {
+    console.log("[Events] Commander/Admin selection mode enabled");
     function activateSelectionMode(officerId, officerName) {
         if (selectionMode) return;
         selectionMode = true;
         selectedOfficerId = officerId;
         selectedOfficerName = officerName;
         hasSelected = false;
+        console.log(`[Events] Selection mode activated for ${officerName}`);
         const infoControl = L.control({ position: 'topright' });
         infoControl.onAdd = () => {
             const div = L.DomUtil.create('div', 'selection-info');
@@ -295,6 +322,7 @@ if (userRole === 'commander' || userRole === 'admin') {
                 const endLng = latlng.lng;
                 const startOfficer = allOfficers[selectedOfficerId];
                 if (startOfficer) {
+                    console.log(`[Events] Move order via long press to ${selectedOfficerId} at (${endLat},${endLng})`);
                     const orderData = {
                         officerId: selectedOfficerId,
                         fromLat: startOfficer.lat,
@@ -321,6 +349,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     }
     function deactivateSelectionMode() {
         if (!selectionMode) return;
+        console.log("[Events] Selection mode deactivated");
         if (tempInfoControl) map.removeControl(tempInfoControl);
         map.getContainer().style.cursor = '';
         if (holdTimer) clearTimeout(holdTimer);
