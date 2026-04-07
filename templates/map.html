@@ -128,6 +128,7 @@
     const safeInitialOfficers = safeObject(initialOfficers);
     const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
     const safeUserColors = safeObject(userColors);
+    if (typeof userRole !== 'string') userRole = 'officer';
 
     // ========== BIẾN TOÀN CỤC ==========
     let map = null;
@@ -208,6 +209,7 @@
     }
 
     function removeAlertMarker(alertId) {
+        if (!map) return;
         if (alertMarkers[alertId]) {
             map.removeLayer(alertMarkers[alertId]);
             delete alertMarkers[alertId];
@@ -256,6 +258,7 @@
     }
 
     function removeOfficerMarker(uid) {
+        if (!map || !officerClusterGroup) return;
         if (officerMarkers[uid]) {
             officerClusterGroup.removeLayer(officerMarkers[uid]);
             delete officerMarkers[uid];
@@ -428,6 +431,7 @@
         // Heatmap
         const incidentsHeatRef = ref(db, 'incidents');
         onValue(incidentsHeatRef, (snapshot) => {
+            if (!map) return;
             const data = snapshot.val();
             const heatPoints = [];
             if (data) {
@@ -444,6 +448,7 @@
 
         // Stationary officers
         safeStationaryOfficers.forEach(officer => {
+            if (!map) return;
             if (isValidVNCoordinate(officer.lat, officer.lng)) {
                 L.circleMarker([officer.lat, officer.lng], {
                     radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
@@ -479,6 +484,7 @@
     const alertIcon = L.divIcon({ className: '', html: '<div class="alert-marker"></div>', iconSize: [24, 24], popupAnchor: [0, -12] });
 
     onChildAdded(alertsRef, (data) => {
+        if (!map) return;
         const alert = data.val();
         const id = data.key;
         if (!alert || !alert.timestamp || alert.timestamp < oneDayAgo) return;
@@ -546,7 +552,8 @@
             L.DomEvent.disableClickPropagation(div);
             return div;
         };
-        toolbar.addTo(map);
+        if (map) toolbar.addTo(map);
+        else setTimeout(() => toolbar.addTo(map), 500);
 
         const drawToggle = document.getElementById('draw-toggle');
         const drawFinish = document.getElementById('draw-finish');
@@ -604,7 +611,8 @@
             L.DomEvent.disableClickPropagation(div);
             return div;
         };
-        arrowToolbar.addTo(map);
+        if (map) arrowToolbar.addTo(map);
+        else setTimeout(() => arrowToolbar.addTo(map), 500);
         const arrowToggle = document.getElementById('arrow-toggle');
         if (arrowToggle) {
             arrowToggle.addEventListener('click', () => {
@@ -677,6 +685,7 @@
         }
     });
     onChildAdded(drawingsRef, (snapshot) => {
+        if (!map) return;
         const id = snapshot.key;
         const drawing = snapshot.val();
         if (!drawing || !drawing.points || drawing.points.length < 2) return;
@@ -695,10 +704,12 @@
         drawingLayers[id] = polyline;
     });
     onChildRemoved(drawingsRef, (snapshot) => {
+        if (!map) return;
         const id = snapshot.key;
         if (drawingLayers[id]) { map.removeLayer(drawingLayers[id]); delete drawingLayers[id]; }
     });
     onValue(drawingsRef, (snapshot) => {
+        if (!map) return;
         const data = snapshot.val() || {};
         const currentIds = new Set(Object.keys(data));
         Object.keys(drawingLayers).forEach(id => {
@@ -708,6 +719,7 @@
 
     // ========== TRACKS (LỊCH SỬ DI CHUYỂN) ==========
     function loadUserTracks(userId, userName, show) {
+        if (!map) return;
         const tracksRef = ref(db, 'tracks/' + userId + '/points');
         const tracksQuery = query(tracksRef, limitToLast(30));
         if (!show) {
@@ -756,6 +768,7 @@
     // ========== MARKERS & INCIDENTS ==========
     const markersRootRef = ref(db, 'markers');
     onChildAdded(markersRootRef, (userSnapshot) => {
+        if (!map) return;
         const userId = userSnapshot.key;
         const userMarkersRef = ref(db, `markers/${userId}`);
         onChildAdded(userMarkersRef, (markerSnapshot) => {
@@ -787,6 +800,7 @@
     const incidentsRef = ref(db, 'incidents');
     const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
     onChildAdded(incidentsRef, (data) => {
+        if (!map) return;
         const inc = data.val();
         const id = data.key;
         if (!inc || !inc.timestamp) return;
@@ -803,6 +817,7 @@
     // ========== MOVE ORDERS ==========
     const moveOrdersRef = ref(db, 'move_orders');
     onChildAdded(moveOrdersRef, (snapshot) => {
+        if (!map) return;
         const order = snapshot.val();
         const orderId = snapshot.key;
         if (!order || order.status !== 'active') return;
@@ -821,6 +836,7 @@
         }
     });
     onChildRemoved(moveOrdersRef, (snapshot) => {
+        if (!map) return;
         const orderId = snapshot.key;
         if (moveOrderLines[orderId]) { map.removeLayer(moveOrderLines[orderId]); delete moveOrderLines[orderId]; }
     });
@@ -839,6 +855,7 @@
     setInterval(checkOrdersCompletion, 5000);
 
     function zoomToAllOfficers() {
+        if (!map) return;
         const officersList = Object.values(allOfficers).filter(o => isValidVNCoordinate(o.lat, o.lng));
         if (officersList.length === 0) return;
         const bounds = L.latLngBounds(officersList.map(o => [o.lat, o.lng]));
@@ -864,6 +881,7 @@
 
     // ========== DIALOG THÊM ĐIỂM & RA LỆNH ==========
     function showPointDialog(latlng) {
+        if (!map) return;
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
         if (oldOverlay) oldOverlay.remove();
@@ -1028,12 +1046,14 @@
 
     // ========== CÁC HÀM VẼ ==========
     function startDrawing() {
+        if (!map) return;
         tempPoints = [];
         if (tempPolyline) map.removeLayer(tempPolyline);
         map.on('click', onMapClick);
         map.getContainer().style.cursor = 'crosshair';
     }
     function cancelDrawing() {
+        if (!map) return;
         map.off('click', onMapClick);
         if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
         tempPoints = [];
@@ -1047,6 +1067,7 @@
         tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
     }
     function saveDrawing() {
+        if (!map) return;
         if (tempPoints.length < 2) { alert("Cần ít nhất 2 điểm để vẽ."); return; }
         const drawingData = {
             points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
@@ -1077,7 +1098,6 @@
             lockOverlay.style.display = 'flex';
             lockBtn.innerHTML = '🔓 Mở khóa';
             lockBtn.style.background = '#ef4444';
-            // Rung nhẹ nếu được hỗ trợ
             if (navigator.vibrate) navigator.vibrate(200);
         } else {
             lockOverlay.style.display = 'none';
@@ -1092,9 +1112,7 @@
         setLock(!isLocked);
     });
 
-    // Đảm bảo overlay không chặn nút (nút có z-index cao hơn)
     lockOverlay.addEventListener('click', (e) => {
-        // Không tự động mở khóa khi chạm vào overlay, chỉ nút mới mở được
         e.stopPropagation();
     });
 
