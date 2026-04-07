@@ -575,7 +575,15 @@ if user_role == "commander" and officers:
     else:
         st.sidebar.info("Không có cán bộ khác trực tuyến")
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
-
+with st.expander("📄 Xem log hệ thống"):
+    log_file = f"logs/system_{datetime.now().strftime('%Y-%m-%d')}.log"
+    
+    if os.path.exists(log_file):
+        with open(log_file, "r", encoding="utf-8") as f:
+            logs = f.read()
+            st.text_area("Logs", logs, height=300)
+    else:
+        st.info("Chưa có log")
 # ==================== CLEANUP ĐỊNH KỲ ====================
 if "last_cleanup" not in st.session_state or time.time() - st.session_state.last_cleanup > 60:
     cleanup_old_data()
