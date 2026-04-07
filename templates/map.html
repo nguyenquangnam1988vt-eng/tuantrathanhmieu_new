@@ -310,15 +310,21 @@
         }
     }
 
-    // NoSleep
+    // NoSleep (fix giữ sáng màn hình)
     let noSleep = new NoSleep();
-    function enableNoSleep() {
-        noSleep.enable();
-        document.removeEventListener('click', enableNoSleep);
-        document.removeEventListener('touchstart', enableNoSleep);
+    
+    function enableNoSleepOnce() {
+        try {
+            noSleep.enable();
+            console.log("NoSleep enabled");
+        } catch (e) {
+            console.warn("NoSleep failed:", e);
+        }
     }
-    document.addEventListener('click', enableNoSleep);
-    document.addEventListener('touchstart', enableNoSleep);
+    
+    // chỉ cần chạm 1 lần là bật
+    document.addEventListener("click", enableNoSleepOnce, { once: true });
+    document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
     // FCM foreground only
     if (fcmVapidKey !== "") {
