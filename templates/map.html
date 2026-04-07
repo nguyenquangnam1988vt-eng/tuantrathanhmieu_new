@@ -43,19 +43,19 @@
     import { getDatabase, ref, set, update, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // ========== NHẬN DỮ LIỆU TỪ PYTHON ==========
-    const firebaseConfig = {{ firebase_config }};
+    // ========== NHẬN DỮ LIỆU TỪ PYTHON (ĐÃ SỬA |tojson) ==========
+    const firebaseConfig = {{ firebase_config | tojson }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const messaging = getMessaging(app);
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    const userRole = {{ user_role }};
-    const showTracks = {{ show_tracks }};
-    const stationaryOfficers = {{ stationary_officers }};
-    const userColors = {{ user_colors }};
-    const initialOfficers = {{ initial_officers }};
+    const userRole = {{ user_role | tojson }};
+    const showTracks = {{ show_tracks | tojson }};
+    const stationaryOfficers = {{ stationary_officers | tojson }};
+    const userColors = {{ user_colors | tojson }};
+    const initialOfficers = {{ initial_officers | tojson }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
@@ -201,7 +201,7 @@
         }
     }
 
-    // ========== CHIA SẺ VỊ TRÍ (BẬT/TẮT QUA NODE 'sharing') ==========
+    // ========== CHIA SẺ VỊ TRÍ ==========
     function startSharing() {
         if (watchId !== null) return;
         console.log("Bắt đầu chia sẻ vị trí");
@@ -329,7 +329,7 @@
         }
     }
 
-    // ========== REALTIME (GỌI SAU KHI MAP ĐÃ KHỞI TẠO) ==========
+    // ========== REALTIME ==========
     function initRealtime() {
         // Officers realtime
         const officersRef = ref(db, 'officers');
@@ -469,8 +469,37 @@
     onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
 
     // ========== DRAW (VẼ) ==========
+    // Hàm khởi tạo toolbar vẽ (chỉ cho commander/admin)
+    function initDrawingToolbar() {
+        if (userRole !== 'commander' && userRole !== 'admin') return;
+        if (!map) return;
+
+        const toolbar = L.control({ position: 'topright' });
+        toolbar.onAdd = () => {
+            const div = L.DomUtil.create('div', 'drawing-toolbar');
+            div.innerHTML = `
+                <div style="background:white; padding:8px; border-radius:8px;">
+                    <button id="draw-toggle" style="margin:2px;">✏️ Vẽ</button>
+                    <button id="draw-finish" style="display:none; margin:2px;">✅ Xong</button>
+                    <div style="margin-top:5px;">
+                        Màu: <input type="color" id="draw-color" value="#ff0000" style="width:30px;">
+                        Nét: <input type="range" id="draw-weight" min="2" max="8" value="3" style="width:60px;">
+                    </div>
+                    <button id="clear-all-drawings" style="background:#ff4444; color:white;">🗑️ Xoá tất cả nét vẽ</button>
+                </div>
+            `;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        };
+        toolbar.addTo(map);
+
+        // Gán sự kiện
         const drawToggle = document.getElementById('draw-toggle');
         const drawFinish = document.getElementById('draw-finish');
+        const colorPicker = document.getElementById('draw-color');
+        const weightSlider = document.getElementById('draw-weight');
+        const clearDrawingsBtn = document.getElementById('clear-all-drawings');
+
         if (drawToggle) {
             drawToggle.addEventListener('click', () => {
                 drawingMode = !drawingMode;
@@ -496,35 +525,72 @@
                 cancelDrawing();
             });
         }
-        const colorPicker = document.getElementById('draw-color');
         if (colorPicker) colorPicker.addEventListener('change', (e) => { drawingColor = e.target.value; });
-        const weightSlider = document.getElementById('draw-weight');
         if (weightSlider) weightSlider.addEventListener('change', (e) => { drawingWeight = parseInt(e.target.value); });
-        const clearDrawingsBtn = document.getElementById('clear-all-drawings');
-        if (clearDrawingsBtn) clearDrawingsBtn.addEventListener('click', async () => {
-            if (confirm('Xóa tất cả nét vẽ?')) await remove(ref(db, 'drawings'));
-        });
-        const clearAlertsBtn = document.getElementById('clear-all-alerts');
-        if (clearAlertsBtn) clearAlertsBtn.addEventListener('click', async () => {
-            if (confirm('Xoá tất cả báo động đang hiển thị?')) {
-                await remove(alertsRef);
-                Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
-            }
-        });
+        if (clearDrawingsBtn) {
+            clearDrawingsBtn.addEventListener('click', async () => {
+                if (confirm('Xóa tất cả nét vẽ?')) await remove(ref(db, 'drawings'));
+            });
+        }
+    }
 
-    if (userRole === 'officer') {
+    // Hàm xử lý vẽ (click trên map)
+    function startDrawing() {
+        tempPoints = [];
+        if (tempPolyline) map.removeLayer(tempPolyline);
+        map.on('click', onMapClick);
+        map.getContainer().style.cursor = 'crosshair';
+    }
+    function cancelDrawing() {
+        map.off('click', onMapClick);
+        if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
+        tempPoints = [];
+        map.getContainer().style.cursor = '';
+    }
+    function onMapClick(e) {
+        if (!drawingMode) return;
+        const { lat, lng } = e.latlng;
+        tempPoints.push([lat, lng]);
+        if (tempPolyline) map.removeLayer(tempPolyline);
+        tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
+    }
+    function saveDrawing() {
+        if (tempPoints.length < 2) { alert("Cần ít nhất 2 điểm để vẽ."); return; }
+        const drawingData = {
+            points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
+            color: drawingColor,
+            weight: drawingWeight,
+            author: myName,
+            authorId: myUsername,
+            timestamp: Date.now(),
+            type: 'draw'
+        };
+        push(ref(db, 'drawings'), drawingData);
+        cancelDrawing();
+        drawingMode = false;
+        const drawToggle = document.getElementById('draw-toggle');
+        const drawFinish = document.getElementById('draw-finish');
+        if (drawToggle) drawToggle.style.background = '';
+        if (drawFinish) drawFinish.style.display = 'none';
+    }
+
+    // ========== ARROW TOOLBAR (CHỈ OFFICER) - ĐÃ SỬA LỖI 1 ==========
+    function initArrowToolbar() {
+        if (userRole !== 'officer' || !map) return;
+
         const arrowToolbar = L.control({ position: 'topright' });
         arrowToolbar.onAdd = () => {
             const div = L.DomUtil.create('div', 'drawing-toolbar');
             div.innerHTML = `
-                <div style="background:white; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-                    <button id="arrow-toggle" style="margin:2px; padding:4px 8px; background:#ff0000; color:white;">🚨 Báo hướng đối tượng</button>
+                <div style="background:white; padding:8px; border-radius:8px;">
+                    <button id="arrow-toggle" style="background:#ff0000;color:white;">🚨 Báo hướng đối tượng</button>
                 </div>
             `;
             L.DomEvent.disableClickPropagation(div);
             return div;
         };
         arrowToolbar.addTo(map);
+
         const arrowToggle = document.getElementById('arrow-toggle');
         if (arrowToggle) {
             arrowToggle.addEventListener('click', () => {
@@ -545,6 +611,7 @@
                 }
             });
         }
+
         function handleArrowClick(e) {
             if (!arrowMode) return;
             const { lat, lng } = e.latlng;
@@ -588,6 +655,7 @@
         map.on('click', handleArrowClick);
     }
 
+    // ========== DRAWINGS REALTIME ==========
     const drawingsRef = ref(db, 'drawings');
     document.addEventListener('click', async (e) => {
         if (e.target && e.target.classList.contains('delete-drawing')) {
@@ -782,7 +850,7 @@
         document.body.appendChild(clearBtn);
     }
 
-    // ========== DIALOG THÊM ĐIỂM & RA LỆNH (có ghi log) ==========
+    // ========== DIALOG THÊM ĐIỂM & RA LỆNH ==========
     function showPointDialog(latlng) {
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
@@ -946,81 +1014,20 @@
         }
     }
 
-    // ========== CÁC HÀM VẼ ==========
-    function startDrawing() {
-        tempPoints = [];
-        if (tempPolyline) map.removeLayer(tempPolyline);
-        map.on('click', onMapClick);
-        map.getContainer().style.cursor = 'crosshair';
-    }
-    function cancelDrawing() {
-        map.off('click', onMapClick);
-        if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
-        tempPoints = [];
-        map.getContainer().style.cursor = '';
-    }
-    function onMapClick(e) {
-        if (!drawingMode) return;
-        const { lat, lng } = e.latlng;
-        tempPoints.push([lat, lng]);
-        if (tempPolyline) map.removeLayer(tempPolyline);
-        tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
-    }
-    function saveDrawing() {
-        if (tempPoints.length < 2) { alert("Cần ít nhất 2 điểm để vẽ."); return; }
-        const drawingData = {
-            points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
-            color: drawingColor,
-            weight: drawingWeight,
-            author: myName,
-            authorId: myUsername,
-            timestamp: Date.now(),
-            type: 'draw'
-        };
-        push(ref(db, 'drawings'), drawingData);
-        cancelDrawing();
-        drawingMode = false;
-        const drawToggle = document.getElementById('draw-toggle');
-        const drawFinish = document.getElementById('draw-finish');
-        if (drawToggle) drawToggle.style.background = '';
-        if (drawFinish) drawFinish.style.display = 'none';
-    }
-
-    // ========== TOOLBAR (THÊM MỚI) ==========
-    function initToolbar() {
-        if (!map) return;
-    
-        if (userRole === 'commander' || userRole === 'admin') {
-            const toolbar = L.control({ position: 'topright' });
-    
-            toolbar.onAdd = () => {
-                const div = L.DomUtil.create('div', 'drawing-toolbar');
-                div.innerHTML = `
-                    <div style="background:white; padding:8px; border-radius:8px;">
-                        <button id="draw-toggle">✏️ Vẽ</button>
-                    </div>
-                `;
-                return div;
-            };
-    
-            toolbar.addTo(map);
-        }
-    }
-
-    // ========== KHỞI CHẠY ỨNG DỤNG (ĐÃ SỬA ĐÚNG THỨ TỰ) ==========
-      document.addEventListener('DOMContentLoaded', () => {
+    // ========== KHỞI CHẠY ỨNG DỤNG ==========
+    document.addEventListener('DOMContentLoaded', () => {
         initMap();
-    
+
+        // Đợi map sẵn sàng rồi mới thêm các toolbar và realtime
         setTimeout(() => {
-            initToolbar();
+            initDrawingToolbar();   // toolbar vẽ cho commander/admin
+            initArrowToolbar();     // toolbar báo hướng cho officer
+            initRealtime();         // lắng nghe dữ liệu realtime
         }, 100);
-    
+
         initOfficersFromInitial();
         initAudio();
-    
-        // ✅ THÊM DÒNG NÀY
-        initRealtime();
-    
+
         setTimeout(() => {
             initAllTracks();
         }, 1000);
