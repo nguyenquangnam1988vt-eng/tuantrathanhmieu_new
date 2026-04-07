@@ -1,0 +1,6 @@
+streamlit
+streamlit-authenticator
+firebase-admin
+pyrebase4
+requests
+PyYAML

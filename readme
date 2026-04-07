@@ -1,0 +1,21 @@
+project/
+├── app.py                     # File chính chạy Streamlit
+├── config.py                  # Cấu hình Firebase, secrets, constants
+├── services/
+│   ├── __init__.py
+│   ├── firebase_service.py    # Tương tác Firebase (credentials, officers, markers, incidents, FCM)
+│   ├── chat_service.py        # Quản lý tin nhắn chat
+│   └── order_service.py       # Lệnh di chuyển, báo động, xử lý nhiệm vụ
+├── utils/
+│   ├── __init__.py
+│   └── helpers.py             # Hàm tiện ích (base64, haversine, upload ảnh, validation)
+├── static/
+│   └── js/
+│       ├── map.js             # Khởi tạo bản đồ, officer markers, clusters
+│       ├── alerts.js          # Xử lý báo động (alert markers, âm thanh, popup)
+│       ├── draw.js            # Vẽ sơ đồ, mũi tên, lưu/xóa drawings
+│       ├── tracking.js        # Theo dõi lộ trình (tracks)
+│       └── events.js          # Sự kiện map: contextmenu, touch, ra lệnh di chuyển
+└── templates/
+    └── map.html               # Template HTML chính, nhúng các file JS và placeholder
+Nội dung các file
