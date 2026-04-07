@@ -458,10 +458,13 @@ map_html = map_html.replace("<!-- TRACKING_JS -->", tracking_js)
 map_html = map_html.replace("<!-- EVENTS_JS -->", events_js)
 
 # ==================== HIỂN THỊ MAP VÀ CHAT ====================
+# ==================== HIỂN THỊ MAP, CHAT VÀ LOG ====================
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-tab1, tab2 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ"])
+tab1, tab2, tab3 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ", "📋 Nhật ký hệ thống"])
+
 with tab1:
     st.components.v1.html(map_html, height=620)
+
 with tab2:
     st.subheader("💬 Chat nội bộ")
     cleanup_old_messages()
@@ -523,6 +526,21 @@ with tab2:
                 send_message(username, name, message)
                 logger.info(f"{username} sent a message")
                 st.rerun()
+
+with tab3:
+    st.subheader("📋 Nhật ký hệ thống (backend)")
+    log_file_today = f"logs/system_{datetime.now().strftime('%Y-%m-%d')}.log"
+    if os.path.exists(log_file_today):
+        with open(log_file_today, "r", encoding="utf-8") as f:
+            logs = f.read()
+        # Hiển thị 200 dòng cuối (có thể điều chỉnh)
+        st.text_area("Logs (200 dòng cuối)", "\n".join(logs.splitlines()[-200:]), height=500)
+    else:
+        st.info("Chưa có log hôm nay. Hãy thực hiện một số thao tác để tạo log.")
+    
+    # Nút làm mới log
+    if st.button("🔄 Tải lại log"):
+        st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
