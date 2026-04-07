@@ -10,18 +10,17 @@ import os
 import sys
 from contextlib import redirect_stdout, redirect_stderr
 import io
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+from folium.plugins import HeatMap
 
-# Import logger trước
 from logger import setup_logger, get_logger
 
-# Thiết lập múi giờ Việt Nam
-VN_TIMEZONE = timezone(timedelta(hours=7))
-
-# Khởi tạo logger (file log sẽ có timestamp VN)
 setup_logger()
 logger = get_logger(__name__)
 
-# Lớp để redirect stdout/stderr vào logger
+# Redirect stdout/stderr
 class LoggerWriter(io.StringIO):
     def __init__(self, logger_func):
         super().__init__()
@@ -32,25 +31,25 @@ class LoggerWriter(io.StringIO):
     def flush(self):
         pass
 
-# Định nghĩa hàm main chứa toàn bộ logic ứng dụng
+# Import các module
+from config import get_cookie_key, get_fcm_server_key, get_fcm_vapid_key, get_imgbb_api_key
+from services.firebase_service import (
+    init_db, load_credentials_from_firebase, save_credentials_to_firebase,
+    load_officers_cached, load_all_markers, load_incidents,
+    cleanup_old_data, cleanup_offline_officers, detect_stationary_officers
+)
+from services.chat_service import get_messages, send_message, cleanup_old_messages
+from services.order_service import create_alert, accept_alert, find_nearest_officers
+from services.hotspot_service import get_incident_data, detect_hotspots, save_hotspot_log
+from utils.helpers import get_base64, is_valid_coordinate, upload_to_imgbb
+
+VN_TIMEZONE = timezone(timedelta(hours=7))
+
 def main():
     logger.info("Application started")
-
-    # Import các module đã tách
-    from config import get_cookie_key, get_fcm_server_key, get_fcm_vapid_key, get_imgbb_api_key
-    from services.firebase_service import (
-        init_db, load_credentials_from_firebase, save_credentials_to_firebase,
-        load_officers_cached, load_all_markers, load_incidents,
-        cleanup_old_data, cleanup_offline_officers, detect_stationary_officers
-    )
-    from services.chat_service import get_messages, send_message, cleanup_old_messages
-    from services.order_service import create_alert, accept_alert, find_nearest_officers
-    from utils.helpers import get_base64, is_valid_coordinate, upload_to_imgbb
-
-    # ==================== CẤU HÌNH TRANG ====================
     st.set_page_config(page_title="Tuần tra cơ động", layout="wide")
 
-    # CSS (giữ nguyên)
+    # CSS
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -207,7 +206,6 @@ def main():
         else:
             user_colors[uid] = data.get("color", "#0066cc")
 
-    # Khởi tạo Firebase DB
     db = init_db()
 
     # Xóa dữ liệu vị trí cũ nếu quá hạn
@@ -313,7 +311,7 @@ def main():
                             logger.error(f"Image upload failed: {error}")
                             st.error(f"Lỗi upload: {error}")
                         else:
-                            logger.info(f"{username} added marker at {current['lat']}, {current['lng']}")
+                            logger.info(f"{username} uploaded incident image at {current['lat']}, {current['lng']}")
                             incident_data = {
                                 "created_by": name,
                                 "lat": current["lat"],
@@ -457,7 +455,6 @@ def main():
     with open(map_template_path, "r", encoding="utf-8") as f:
         map_template = f.read()
 
-    # Thay thế các placeholder
     map_html = map_template
     map_html = map_html.replace("{{ firebase_config }}", firebase_config_json)
     map_html = map_html.replace("{{ username }}", username)
@@ -469,16 +466,15 @@ def main():
     map_html = map_html.replace("{{ initial_officers }}", initial_officers_json)
     map_html = map_html.replace("{{ alert_sound_base64 }}", alert_sound_base64)
     map_html = map_html.replace("{{ fcm_vapid_key }}", fcm_vapid_key)
-    # Chèn các đoạn script
     map_html = map_html.replace("<!-- MAP_JS -->", map_js)
     map_html = map_html.replace("<!-- ALERTS_JS -->", alerts_js)
     map_html = map_html.replace("<!-- DRAW_JS -->", draw_js)
     map_html = map_html.replace("<!-- TRACKING_JS -->", tracking_js)
     map_html = map_html.replace("<!-- EVENTS_JS -->", events_js)
 
-    # ==================== HIỂN THỊ MAP, CHAT VÀ LOG ====================
+    # ==================== HIỂN THỊ MAP, CHAT, LOG, HOTSPOT ====================
     st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-    tab1, tab2, tab3 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ", "📋 Nhật ký hệ thống"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ", "📋 Nhật ký hệ thống", "🔥 Điểm nóng"])
 
     with tab1:
         st.components.v1.html(map_html, height=620)
@@ -556,6 +552,55 @@ def main():
             st.info("Chưa có log hôm nay. Hãy thực hiện một số thao tác để tạo log.")
         if st.button("🔄 Tải lại log"):
             st.rerun()
+
+    with tab4:
+        st.subheader("🔥 Phân tích điểm nóng từ dữ liệu sự cố")
+        st.markdown("Phát hiện các khu vực có mật độ sự cố cao (dựa trên DBSCAN).")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            days = st.number_input("Số ngày gần đây để phân tích", min_value=7, max_value=90, value=30, step=7)
+        with col2:
+            eps_km = st.number_input("Bán kính cụm (km)", min_value=0.2, max_value=5.0, value=1.0, step=0.1)
+            min_samples = st.number_input("Số điểm tối thiểu tạo cụm", min_value=2, max_value=20, value=3, step=1)
+        
+        if st.button("🔍 Chạy phân tích", type="primary"):
+            with st.spinner("Đang phân tích dữ liệu..."):
+                df = get_incident_data(days_back=days)
+                if df.empty:
+                    st.warning("Không có dữ liệu sự cố trong khoảng thời gian này.")
+                else:
+                    df_clustered, clusters = detect_hotspots(df, eps_km=eps_km, min_samples=min_samples)
+                    if not clusters:
+                        st.info("Không phát hiện cụm điểm nóng nào.")
+                    else:
+                        st.success(f"Đã phát hiện {len(clusters)} điểm nóng.")
+                        save_hotspot_log(clusters, days)
+                        
+                        center_lat = df['lat'].mean()
+                        center_lng = df['lng'].mean()
+                        m = folium.Map(location=[center_lat, center_lng], zoom_start=12)
+                        heat_data = [[row['lat'], row['lng']] for _, row in df.iterrows()]
+                        HeatMap(heat_data, radius=15, blur=10, max_zoom=1).add_to(m)
+                        for c in clusters:
+                            folium.CircleMarker(
+                                location=[c['center_lat'], c['center_lng']],
+                                radius=c['size'] * 2,
+                                color='red',
+                                fill=True,
+                                fill_color='red',
+                                fill_opacity=0.6,
+                                popup=f"Cụm {c['cluster_id']}<br>Điểm: {c['size']}<br>Bán kính ~{c['radius_km']:.2f} km"
+                            ).add_to(m)
+                        st_folium(m, width=700, height=500)
+                        
+                        cluster_df = pd.DataFrame(clusters)
+                        cluster_df = cluster_df.rename(columns={
+                            'cluster_id': 'ID', 'center_lat': 'Vĩ độ', 'center_lng': 'Kinh độ',
+                            'size': 'Số điểm', 'radius_km': 'Bán kính (km)'
+                        })
+                        st.dataframe(cluster_df[['ID', 'Vĩ độ', 'Kinh độ', 'Số điểm', 'Bán kính (km)']])
+
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==================== THÔNG TIN PHỤ TRONG SIDEBAR ====================
@@ -615,8 +660,6 @@ def main():
         logger.info("System cleanup executed")
         st.session_state.last_cleanup = time.time()
 
-# Chạy ứng dụng với redirect stdout/stderr vào logger
 if __name__ == "__main__":
-    # Redirect toàn bộ output console vào logger
     with redirect_stdout(LoggerWriter(logger.info)), redirect_stderr(LoggerWriter(logger.error)):
         main()
