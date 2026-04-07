@@ -94,6 +94,7 @@ if (userRole === 'officer') {
     const arrowToggle = document.getElementById('arrow-toggle');
     if (arrowToggle) {
         arrowToggle.addEventListener('click', () => {
+            logAction("toggle_arrow", { status: !arrowMode });
             if (arrowMode) {
                 arrowMode = false;
                 arrowToggle.style.background = '#ff0000';
@@ -117,10 +118,12 @@ if (userRole === 'officer') {
         const { lat, lng } = e.latlng;
         if (arrowStart === null) {
             arrowStart = [lat, lng];
+            logAction("arrow_start", { lat, lng });
             arrowTempLine = L.circleMarker(arrowStart, { radius: 8, color: 'red', fillColor: 'red', fillOpacity: 0.7 }).addTo(map);
         } else {
             const start = arrowStart;
             const end = [lat, lng];
+            logAction("arrow_drawn", { from: arrowStart, to: end });
             const arrowLine = L.polyline([start, end], { color: 'red', weight: 4, opacity: 0.9 }).addTo(map);
             if (arrowLine.arrowheads) arrowLine.arrowheads({ size: '15px', frequency: 'all', color: 'red' });
             const drawingData = {
@@ -133,6 +136,7 @@ if (userRole === 'officer') {
                 type: 'arrow'
             };
             push(ref(db, 'drawings'), drawingData);
+            logAction("drawing_saved");
             // Tạo báo động
             const alertData = {
                 name: `Hướng di chuyển từ ${myName}`,
@@ -145,6 +149,7 @@ if (userRole === 'officer') {
                 arrowAlert: true
             };
             push(ref(db, 'alerts'), alertData);
+            logAction("arrow_alert_created");
             arrowMode = false;
             if (arrowToggle) arrowToggle.style.background = '#ff0000';
             map.getContainer().style.cursor = '';
