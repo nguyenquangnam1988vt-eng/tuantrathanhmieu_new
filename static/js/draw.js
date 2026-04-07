@@ -1,3 +1,5 @@
+console.log("[Draw] Initializing draw module");
+
 // ==================== VẼ SƠ ĐỒ (COMMANDER/ADMIN) ====================
 if (userRole === 'commander' || userRole === 'admin') {
     const toolbar = L.control({ position: 'topright' });
@@ -17,12 +19,14 @@ if (userRole === 'commander' || userRole === 'admin') {
         return div;
     };
     toolbar.addTo(map);
+    console.log("[Draw] Commander/Admin toolbar added");
 
     const drawToggle = document.getElementById('draw-toggle');
     const drawFinish = document.getElementById('draw-finish');
     if (drawToggle) {
         drawToggle.addEventListener('click', () => {
             drawingMode = !drawingMode;
+            console.log(`[Draw] Drawing mode: ${drawingMode}`);
             if (drawingMode) {
                 drawToggle.style.background = '#4caf50';
                 drawToggle.style.color = 'white';
@@ -39,6 +43,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     if (drawFinish) {
         drawFinish.addEventListener('click', () => {
             if (drawingMode && tempPoints.length >= 2) {
+                console.log(`[Draw] Saving drawing with ${tempPoints.length} points`);
                 saveDrawing();
             }
             drawingMode = false;
@@ -59,6 +64,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     if (clearDrawingsBtn) {
         clearDrawingsBtn.addEventListener('click', async () => {
             if (confirm('Xóa tất cả nét vẽ?')) {
+                console.log("[Draw] Clearing all drawings");
                 await remove(ref(db, 'drawings'));
             }
         });
@@ -67,6 +73,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     if (clearAlertsBtn) {
         clearAlertsBtn.addEventListener('click', async () => {
             if (confirm('Xoá tất cả báo động đang hiển thị?')) {
+                console.log("[Draw] Clearing all alerts");
                 await remove(alertsRef);
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
@@ -76,6 +83,7 @@ if (userRole === 'commander' || userRole === 'admin') {
 
 // ==================== VẼ MŨI TÊN CHO OFFICER ====================
 if (userRole === 'officer') {
+    console.log("[Draw] Officer arrow mode initialized");
     const arrowToolbar = L.control({ position: 'topright' });
     arrowToolbar.onAdd = () => {
         const div = L.DomUtil.create('div', 'drawing-toolbar');
@@ -99,6 +107,7 @@ if (userRole === 'officer') {
                 if (arrowTempLine) map.removeLayer(arrowTempLine);
                 arrowStart = null;
                 map.getContainer().style.cursor = '';
+                console.log("[Draw] Arrow mode disabled");
             } else {
                 arrowMode = true;
                 arrowToggle.style.background = '#cc0000';
@@ -106,6 +115,7 @@ if (userRole === 'officer') {
                 map.getContainer().style.cursor = 'crosshair';
                 arrowStart = null;
                 if (arrowTempLine) map.removeLayer(arrowTempLine);
+                console.log("[Draw] Arrow mode enabled");
             }
         });
     }
@@ -116,6 +126,7 @@ if (userRole === 'officer') {
         if (arrowStart === null) {
             arrowStart = [lat, lng];
             arrowTempLine = L.circleMarker(arrowStart, { radius: 8, color: 'red', fillColor: 'red', fillOpacity: 0.7 }).addTo(map);
+            console.log(`[Draw] Arrow start at ${lat},${lng}`);
         } else {
             const start = arrowStart;
             const end = [lat, lng];
@@ -131,7 +142,6 @@ if (userRole === 'officer') {
                 type: 'arrow'
             };
             push(ref(db, 'drawings'), drawingData);
-            // Tạo báo động
             const alertData = {
                 name: `Hướng di chuyển từ ${myName}`,
                 lat: end[0],
@@ -143,6 +153,7 @@ if (userRole === 'officer') {
                 arrowAlert: true
             };
             push(ref(db, 'alerts'), alertData);
+            console.log(`[Draw] Arrow drawn from (${start[0]},${start[1]}) to (${end[0]},${end[1]})`);
             arrowMode = false;
             if (arrowToggle) arrowToggle.style.background = '#ff0000';
             map.getContainer().style.cursor = '';
@@ -156,12 +167,14 @@ if (userRole === 'officer') {
 
 // ==================== DRAWINGS - INCREMENTAL ====================
 const drawingsRef = ref(db, 'drawings');
+console.log("[Draw] Listening for drawings");
 
 document.addEventListener('click', async (e) => {
     if (e.target && e.target.classList.contains('delete-drawing')) {
         const id = e.target.getAttribute('data-id');
         if (!id) return;
         if (confirm("Xóa nét vẽ này?")) {
+            console.log(`[Draw] Deleting drawing ${id}`);
             await remove(ref(db, 'drawings/' + id));
         }
     }
@@ -172,6 +185,7 @@ onChildAdded(drawingsRef, (snapshot) => {
     const drawing = snapshot.val();
     if (!drawing || !drawing.points || drawing.points.length < 2) return;
     if (drawingLayers[id]) return;
+    console.log(`[Draw] New drawing added: ${id} from ${drawing.author}`);
     const latlngs = drawing.points.map(p => [p.lat, p.lng]);
     const polyline = L.polyline(latlngs, {
         color: drawing.color || '#ff0000',
@@ -192,6 +206,7 @@ onChildAdded(drawingsRef, (snapshot) => {
 
 onChildRemoved(drawingsRef, (snapshot) => {
     const id = snapshot.key;
+    console.log(`[Draw] Drawing removed: ${id}`);
     if (drawingLayers[id]) {
         map.removeLayer(drawingLayers[id]);
         delete drawingLayers[id];
@@ -203,6 +218,7 @@ onValue(drawingsRef, (snapshot) => {
     const currentIds = new Set(Object.keys(data));
     Object.keys(drawingLayers).forEach(id => {
         if (!currentIds.has(id)) {
+            console.log(`[Draw] Cleaning up stale drawing layer: ${id}`);
             map.removeLayer(drawingLayers[id]);
             delete drawingLayers[id];
         }
