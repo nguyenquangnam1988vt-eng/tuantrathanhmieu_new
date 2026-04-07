@@ -511,7 +511,6 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-    }
 
     if (userRole === 'officer') {
         const arrowToolbar = L.control({ position: 'topright' });
@@ -1009,16 +1008,18 @@
     }
 
     // ========== KHỞI CHẠY ỨNG DỤNG (ĐÃ SỬA ĐÚNG THỨ TỰ) ==========
-   document.addEventListener('DOMContentLoaded', () => {
+      document.addEventListener('DOMContentLoaded', () => {
         initMap();
     
-        // ✅ thêm dòng này
         setTimeout(() => {
             initToolbar();
         }, 100);
     
         initOfficersFromInitial();
         initAudio();
+    
+        // ✅ THÊM DÒNG NÀY
+        initRealtime();
     
         setTimeout(() => {
             initAllTracks();
