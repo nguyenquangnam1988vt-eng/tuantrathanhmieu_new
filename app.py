@@ -7,9 +7,11 @@ import time
 from datetime import datetime, timezone, timedelta
 import base64
 import os
-from logger import get_logger
+from logger import setup_logger, get_logger
 
+setup_logger()  # 🔥 BẮT BUỘC
 logger = get_logger(__name__)
+
 logger.info("Application started")
 
 # Import các module đã tách
@@ -156,11 +158,15 @@ name = st.session_state.get("name")
 username = st.session_state.get("username")
 
 if authentication_status == False:
+    logger.warning(f"Failed login attempt: {username}")
     st.error("Sai tên đăng nhập hoặc mật khẩu")
     st.stop()
 elif authentication_status == None:
+    logger.info("User has not logged in yet")
     st.warning("Vui lòng đăng nhập")
     st.stop()
+else:
+    logger.info(f"User {username} logged in successfully")
 
 authenticator.logout("Đăng xuất", "sidebar")
 st.sidebar.success(f"Xin chào {name}")
@@ -209,11 +215,13 @@ col1, col2 = st.columns([1, 5])
 with col1:
     if not st.session_state.sharing:
         if st.button("📡 Bắt đầu chia sẻ vị trí"):
+            logger.info(f"{username} started location sharing")
             db.child("officers").child(username).remove()
             st.session_state.sharing = True
             st.rerun()
     else:
         if st.button("🛑 Dừng chia sẻ"):
+            logger.info(f"{username} stopped location sharing")
             db.child("officers").child(username).remove()
             st.session_state.sharing = False
             st.rerun()
@@ -226,6 +234,7 @@ st.sidebar.markdown('<div class="sidebar-group"><h3>🚨 ĐIỀU HÀNH</h3></div
 with st.sidebar:
     st.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
     if st.button("🚨 Gửi báo động", key="alert_btn"):
+        logger.warning(f"{username} triggered an alert")
         user_data = db.child("officers").child(username).get().val()
         if user_data and is_valid_coordinate(user_data.get("lat"), user_data.get("lng")):
             lat = user_data["lat"]
@@ -234,6 +243,7 @@ with st.sidebar:
             create_alert(username, name, lat, lng, nearest, get_fcm_server_key())
             st.success("Đã gửi báo động!")
         else:
+            logger.warning(f"{username} tried to send alert without valid location")
             st.error("Bạn chưa chia sẻ vị trí hợp lệ hoặc vị trí không xác định")
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -241,14 +251,17 @@ with st.sidebar:
     if st.button("✅ Nhận nhiệm vụ gần nhất", key="accept_mission"):
         success, msg = accept_alert(username, name)
         if success:
+            logger.info(f"{username} accepted mission")
             st.success(msg)
         else:
+            logger.warning(f"{username} failed to accept mission: {msg}")
             st.info(msg)
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown('<div class="sidebar-group"><h3>📍 TÁC VỤ CÁ NHÂN</h3></div>', unsafe_allow_html=True)
 with st.sidebar:
     with st.expander("📍 Đánh dấu điểm"):
+        logger.info(f"{username} added marker at {current['lat']}, {current['lng']}")
         note = st.text_area("Ghi chú")
         if st.button("Thêm điểm tại vị trí hiện tại"):
             current = db.child("officers").child(username).get().val()
@@ -278,8 +291,10 @@ with st.sidebar:
                 if current and is_valid_coordinate(current.get("lat"), current.get("lng")):
                     image_url, error = upload_to_imgbb(uploaded_file, get_imgbb_api_key())
                     if error:
+                        logger.error(f"Image upload failed: {error}")
                         st.error(f"Lỗi upload: {error}")
                     else:
+                        logger.info(f"{username} added marker at {current['lat']}, {current['lng']}")
                         incident_data = {
                             "created_by": name,
                             "lat": current["lat"],
@@ -506,6 +521,7 @@ with tab2:
             else:
                 st.session_state.last_chat_time = now
                 send_message(username, name, message)
+                logger.info(f"{username} sent a message")
                 st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
@@ -564,4 +580,5 @@ if user_role == "commander" and officers:
 if "last_cleanup" not in st.session_state or time.time() - st.session_state.last_cleanup > 60:
     cleanup_old_data()
     cleanup_offline_officers()
+    logger.info("System cleanup executed")
     st.session_state.last_cleanup = time.time()
