@@ -22,6 +22,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     const drawFinish = document.getElementById('draw-finish');
     if (drawToggle) {
         drawToggle.addEventListener('click', () => {
+            logAction("toggle_draw", { status: !drawingMode });
             drawingMode = !drawingMode;
             if (drawingMode) {
                 drawToggle.style.background = '#4caf50';
@@ -39,6 +40,7 @@ if (userRole === 'commander' || userRole === 'admin') {
     if (drawFinish) {
         drawFinish.addEventListener('click', () => {
             if (drawingMode && tempPoints.length >= 2) {
+                logAction("draw_finish", { points: tempPoints.length });
                 saveDrawing();
             }
             drawingMode = false;
