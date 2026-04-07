@@ -1,4 +1,6 @@
 // Xử lý báo động
+console.log("[Alerts] Initializing alerts module");
+
 const alertsRef = ref(db, 'alerts');
 const oneDayAgo = Date.now() - 24*60*60*1000;
 const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
@@ -26,6 +28,7 @@ const alertIcon = L.divIcon({ className: '', html: '<div class="alert-marker"></
 onChildAdded(alertsRef, (data) => {
     const alert = data.val();
     const id = data.key;
+    console.log(`[Alerts] New alert received: ${id} from ${alert.name}`);
     if (!alert || !alert.timestamp || alert.timestamp < oneDayAgo) return;
     if (!isValidVNCoordinate(alert.lat, alert.lng)) return;
     if (!alertMarkers[id]) {
@@ -40,11 +43,11 @@ onChildAdded(alertsRef, (data) => {
     if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
         playedAlerts.add(id);
         savePlayedAlerts();
+        console.log(`[Alerts] Playing alert sound and flying to ${alert.lat},${alert.lng}`);
         if (audioActivated && alertSound) {
             alertSound.currentTime = 0;
             alertSound.play().catch(() => {});
         }
-        // Chỉ flyTo nếu người dùng không đang tương tác
         if (!map._animatingZoom && !userDragging) {
             map.flyTo([alert.lat, alert.lng], 17, { animate: true, duration: 1.5 });
         }
@@ -55,6 +58,7 @@ onChildAdded(alertsRef, (data) => {
             get(ref(db, 'alerts/' + id)).then((snapshot) => {
                 const currentAlert = snapshot.val();
                 if (currentAlert && currentAlert.status === 'pending') {
+                    console.log(`[Alerts] Alert ${id} expired`);
                     removeAlertMarker(id);
                     update(ref(db, 'alerts/' + id), { status: 'expired' });
                 }
@@ -66,10 +70,15 @@ onChildAdded(alertsRef, (data) => {
 onChildChanged(alertsRef, (data) => {
     const alert = data.val();
     const id = data.key;
+    console.log(`[Alerts] Alert changed: ${id} status=${alert.status}`);
     if (!alert) return;
     if (alertMarkers[id]) {
         alertMarkers[id].setPopupContent(getAlertPopupContent(alert));
         if (["accepted", "resolved", "expired"].includes(alert.status)) removeAlertMarker(id);
     }
 });
-onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
+onChildRemoved(alertsRef, (data) => { 
+    const id = data.key;
+    console.log(`[Alerts] Alert removed: ${id}`);
+    removeAlertMarker(id);
+});
