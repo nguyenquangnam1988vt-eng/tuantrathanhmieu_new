@@ -11,10 +11,10 @@
     <script src="https://unpkg.com/leaflet-arrowheads@1.2.0/dist/leaflet-arrowheads.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     <style>
-        html, body { height: 100%; margin: 0; padding: 0; }
-        #map { height: 100%; width: 100%; }
+        /* ... giữ nguyên style ... */
+        #map { height: 600px; width: 100%; }
+        .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
         .alert-marker { width: 24px; height: 24px; background: red; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px red; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
@@ -24,7 +24,19 @@
         .leaflet-marker-icon { transition: transform 0.2s ease; }
         .leaflet-marker-icon:hover { transform: scale(1.3); }
         * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-        .custom-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 2000; width: 280px; padding: 16px; font-family: sans-serif; }
+        .custom-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 2000;
+            width: 280px;
+            padding: 16px;
+            font-family: sans-serif;
+        }
         .custom-dialog h4 { margin-top: 0; margin-bottom: 12px; }
         .custom-dialog input, .custom-dialog select { width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; }
         .custom-dialog button { padding: 8px 12px; margin-right: 8px; border: none; border-radius: 6px; cursor: pointer; }
@@ -33,10 +45,11 @@
         .clear-orders-btn { position: absolute; top: 10px; right: 10px; background: #ff8800; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; z-index: 1000; font-size: 14px; font-weight: bold; }
         .drawing-toolbar button { cursor: pointer; border: none; border-radius: 4px; font-size: 14px; margin: 2px; padding: 4px 8px; }
         .drawing-toolbar button:hover { opacity: 0.8; }
+        .drawing-info { background: white; padding: 5px 10px; border-radius: 8px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
 
-        /* Nút khóa màn hình */
-        #lockScreenBtn {
+        /* Nút khóa màn hình - góc phải dưới */
+        #lockBtn {
             position: fixed;
             bottom: 20px;
             right: 20px;
@@ -45,85 +58,80 @@
             color: white;
             border: none;
             border-radius: 50px;
-            padding: 12px 20px;
-            font-size: 14px;
+            padding: 10px 16px;
             font-weight: bold;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             transition: 0.2s;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         }
-        #lockScreenBtn:active { transform: scale(0.96); }
+        #lockBtn:active {
+            transform: scale(0.96);
+        }
         #lockOverlay {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.85);
-            backdrop-filter: blur(12px);
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
             z-index: 9999;
             display: none;
             justify-content: center;
             align-items: center;
-            flex-direction: column;
             color: white;
-            font-size: 20px;
-            font-weight: bold;
+            font-size: 18px;
             text-align: center;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            pointer-events: auto;
+            font-family: sans-serif;
         }
         #lockOverlay div {
             background: rgba(0,0,0,0.6);
             padding: 20px 30px;
-            border-radius: 30px;
-            backdrop-filter: blur(4px);
+            border-radius: 20px;
         }
-        .unlock-hint { font-size: 14px; margin-top: 15px; opacity: 0.8; }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<button id="lockScreenBtn">🔒 Khóa màn hình</button>
+<!-- Nút khóa màn hình và lớp phủ -->
+<button id="lockBtn">🔒 Khóa</button>
 <div id="lockOverlay">
-    <div>🔒 Màn hình đã bị khóa<br><span class="unlock-hint">Nhấn nút góc phải dưới để mở khóa</span></div>
+    <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, set, update, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // ========== NHẬN DỮ LIỆU TỪ PYTHON (đã được json.dumps) ==========
-    const firebaseConfig = JSON.parse('{{ firebase_config | safe }}');
-    const myUsername = "{{ username }}";
-    const myName = "{{ name }}";
-    const userRole = JSON.parse('{{ user_role | safe }}');
-    const showTracks = JSON.parse('{{ show_tracks | safe }}');
-    const stationaryOfficers = JSON.parse('{{ stationary_officers | safe }}');
-    const userColors = JSON.parse('{{ user_colors | safe }}');
-    const initialOfficers = JSON.parse('{{ initial_officers | safe }}');
-    const alertSoundBase64 = "{{ alert_sound_base64 }}";
-    const fcmVapidKey = "{{ fcm_vapid_key }}";
-
-    // Hàm an toàn
-    function safeObject(v) {
-        return (typeof v === "object" && v !== null) ? v : {};
-    }
-    const safeShowTracks = safeObject(showTracks);
-    const safeInitialOfficers = safeObject(initialOfficers);
-    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
-    const safeUserColors = safeObject(userColors);
-    let role = (typeof userRole === 'string') ? userRole : 'officer';
-
-    // Khởi tạo Firebase
+    const firebaseConfig = {{ firebase_config }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const messaging = getMessaging(app);
 
-    // ========== BIẾN TOÀN CỤC ==========
+    const myUsername = "{{ username }}";
+    const myName = "{{ name }}";
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
+    const alertSoundBase64 = "{{ alert_sound_base64 }}";
+    const fcmVapidKey = "{{ fcm_vapid_key }}";
+
+    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
+    function safeObject(v) {
+        return (typeof v === "object" && v !== null) ? v : {};
+    }
+
+    const safeShowTracks = safeObject(showTracks);
+    const safeInitialOfficers = safeObject(initialOfficers);
+    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
+    const safeUserColors = safeObject(userColors);
+    if (typeof userRole !== 'string') userRole = 'officer';
+
+    // Biến toàn cục
     let map = null;
     let officerClusterGroup = null;
     let allOfficers = {};
@@ -154,11 +162,8 @@
     let arrowTempLine = null;
     let drawingLayers = {};
     let userDragging = false;
-    let watchId = null;
-    let sharingEnabled = false;
-    let heatLayer = null;
 
-    // ========== HÀM TIỆN ÍCH ==========
+    // Các hàm tiện ích
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -202,7 +207,6 @@
     }
 
     function removeAlertMarker(alertId) {
-        if (!map) return;
         if (alertMarkers[alertId]) {
             map.removeLayer(alertMarkers[alertId]);
             delete alertMarkers[alertId];
@@ -227,14 +231,14 @@
         if (uid === myUsername) return safeUserColors[uid] || '#0066cc';
         const now = Date.now();
         const diff = now - lastUpdate;
-        if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) return '#9ca3af';
+        if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) {
+            return '#9ca3af';
+        }
         return safeUserColors[uid] || '#0066cc';
     }
 
     function updateOfficerMarker(uid, officer) {
         if (!map || !officerClusterGroup) return;
-        if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         const latlng = [officer.lat, officer.lng];
         const lastUpdate = officer.lastUpdate || 0;
         const color = getOfficerColorWithStatus(uid, lastUpdate);
@@ -251,62 +255,12 @@
     }
 
     function removeOfficerMarker(uid) {
-        if (!map || !officerClusterGroup) return;
         if (officerMarkers[uid]) {
             officerClusterGroup.removeLayer(officerMarkers[uid]);
             delete officerMarkers[uid];
         }
     }
 
-    // ========== CHIA SẺ VỊ TRÍ ==========
-    function startSharing() {
-        if (watchId !== null) return;
-        console.log("Bắt đầu chia sẻ vị trí");
-        watchId = navigator.geolocation.watchPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                if (!isValidVNCoordinate(lat, lng)) return;
-                const data = {
-                    lat: lat,
-                    lng: lng,
-                    name: myName,
-                    lastUpdate: Date.now(),
-                    lastSeen: Date.now()
-                };
-                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
-                allOfficers[myUsername] = data;
-                updateOfficerMarker(myUsername, data);
-            },
-            (error) => console.error("GPS error:", error),
-            { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-        );
-    }
-
-    function stopSharing() {
-        if (watchId !== null) {
-            navigator.geolocation.clearWatch(watchId);
-            watchId = null;
-            console.log("Dừng chia sẻ vị trí");
-        }
-        remove(ref(db, 'officers/' + myUsername)).catch(console.error);
-        delete allOfficers[myUsername];
-        removeOfficerMarker(myUsername);
-    }
-
-    const sharingRef = ref(db, 'sharing/' + myUsername);
-    onValue(sharingRef, (snapshot) => {
-        const sharing = snapshot.val();
-        if (sharing === true && !sharingEnabled) {
-            sharingEnabled = true;
-            startSharing();
-        } else if (sharing !== true && sharingEnabled) {
-            sharingEnabled = false;
-            stopSharing();
-        }
-    });
-
-    // ========== KHỞI TẠO BẢN ĐỒ ==========
     function initMap() {
         const savedCenter = sessionStorage.getItem('mapCenter');
         const savedZoom = sessionStorage.getItem('mapZoom');
@@ -324,8 +278,11 @@
             updateWhenZooming: false
         }).addTo(map);
         officerClusterGroup = L.markerClusterGroup({
-            chunkedLoading: true, maxClusterRadius: 80, spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false, zoomToBoundsOnClick: true
+            chunkedLoading: true,
+            maxClusterRadius: 80,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
         });
         map.addLayer(officerClusterGroup);
         map.on('moveend', () => {
@@ -337,7 +294,7 @@
         map.on('dragend', () => userDragging = false);
         map.on('zoomstart', () => userDragging = true);
         map.on('zoomend', () => userDragging = false);
-
+        
         if (navigator.geolocation && !sessionStorage.getItem('zoomedToMe')) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -351,23 +308,9 @@
                 { enableHighAccuracy: true, timeout: 10000 }
             );
         }
-        console.log("Map initialized successfully");
     }
 
-    // ========== FCM FOREGROUND ==========
-    if (fcmVapidKey !== "") {
-        onMessage(messaging, payload => {
-            if (Notification.permission === 'granted') {
-                new Notification(payload.notification.title, { body: payload.notification.body });
-            }
-        });
-        const requestNotificationPermission = () => {
-            if (Notification.permission !== 'granted') Notification.requestPermission();
-        };
-        document.body.addEventListener('click', requestNotificationPermission, { once: true });
-    }
-
-    // ========== NOSLEEP ==========
+    // NoSleep
     let noSleep = new NoSleep();
     function enableNoSleep() {
         noSleep.enable();
@@ -377,736 +320,138 @@
     document.addEventListener('click', enableNoSleep);
     document.addEventListener('touchstart', enableNoSleep);
 
-    // ========== KHỞI TẠO OFFICERS TỪ INITIAL ==========
-    function initOfficersFromInitial() {
-        for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
-            if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
-                allOfficers[uid] = officer;
-                updateOfficerMarker(uid, officer);
-            }
-        }
-    }
-
-    // ========== REALTIME ==========
-    function initRealtime() {
-        const officersRef = ref(db, 'officers');
-        onDisconnect(ref(db, 'officers/' + myUsername)).remove();
-
-        onChildAdded(officersRef, (snapshot) => {
-            if (!map) return;
-            const id = snapshot.key;
-            const officer = snapshot.val();
-            if (!officer) return;
-            if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-            if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-            allOfficers[id] = officer;
-            updateOfficerMarker(id, officer);
-            if (id === myUsername && !sessionStorage.getItem('zoomedToMe') && officer.lat && officer.lng) {
-                map.setView([officer.lat, officer.lng], 16);
-                sessionStorage.setItem('zoomedToMe', 'true');
+    // FCM foreground only
+    if (fcmVapidKey !== "") {
+        onMessage(messaging, payload => {
+            if (Notification.permission === 'granted') {
+                new Notification(payload.notification.title, { body: payload.notification.body });
+            } else {
+                console.log("Notification permission not granted");
             }
         });
-
-        onChildChanged(officersRef, (snapshot) => {
-            if (!map) return;
-            const id = snapshot.key;
-            const officer = snapshot.val();
-            if (!officer) return;
-            if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-            if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-            allOfficers[id] = officer;
-            updateOfficerMarker(id, officer);
-        });
-
-        onChildRemoved(officersRef, (snapshot) => {
-            if (!map) return;
-            const id = snapshot.key;
-            delete allOfficers[id];
-            removeOfficerMarker(id);
-        });
-
-        // Heatmap
-        const incidentsHeatRef = ref(db, 'incidents');
-        onValue(incidentsHeatRef, (snapshot) => {
-            if (!map) return;
-            const data = snapshot.val();
-            const heatPoints = [];
-            if (data) {
-                Object.values(data).forEach(inc => {
-                    if (inc && inc.lat && inc.lng) heatPoints.push([inc.lat, inc.lng, 0.5]);
+        const requestNotificationPermission = () => {
+            if (Notification.permission !== 'granted') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') console.log("Notification permission granted");
                 });
             }
-            if (heatLayer) map.removeLayer(heatLayer);
-            if (heatPoints.length) {
-                heatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15, maxZoom: 17 });
-                heatLayer.addTo(map);
-            }
-        });
-
-        // Stationary
-        safeStationaryOfficers.forEach(officer => {
-            if (!map) return;
-            if (isValidVNCoordinate(officer.lat, officer.lng)) {
-                L.circleMarker([officer.lat, officer.lng], {
-                    radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
-                    renderer: L.canvas()
-                }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
-            }
-        });
-    }
-
-    // ========== ALERTS ==========
-    const alertsRef = ref(db, 'alerts');
-    const oneDayAgo = Date.now() - 24*60*60*1000;
-    const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
-    function savePlayedAlerts() { sessionStorage.setItem("playedAlerts", JSON.stringify([...playedAlerts])); }
-
-    function getAlertPopupContent(alert) {
-        if (!alert || !alert.name) return "Báo động không hợp lệ";
-        let distanceText = "";
-        const myPos = allOfficers[myUsername];
-        if (myPos && isValidVNCoordinate(myPos.lat, myPos.lng)) {
-            const distance = haversine(myPos.lat, myPos.lng, alert.lat, alert.lng);
-            distanceText = `<br>Khoảng cách: ${(distance/1000).toFixed(2)} km`;
-        }
-        let statusText = "";
-        if (alert.status === "pending") statusText = "🟥 Chưa xử lý";
-        else if (alert.status === "accepted") statusText = `🟨 Đang xử lý bởi ${alert.accepted_by || ""}`;
-        else if (alert.status === "resolved") statusText = "🟩 Đã xong";
-        else if (alert.status === "expired") statusText = "⏰ Hết hạn";
-        else statusText = "Không rõ";
-        return `🚨 <b>Báo động từ ${alert.name}</b><br> Trạng thái: ${statusText} ${distanceText}<br> ${new Date(alert.timestamp).toLocaleString()}`;
-    }
-
-    const alertIcon = L.divIcon({ className: '', html: '<div class="alert-marker"></div>', iconSize: [24, 24], popupAnchor: [0, -12] });
-
-    onChildAdded(alertsRef, (data) => {
-        if (!map) return;
-        const alert = data.val();
-        const id = data.key;
-        if (!alert || !alert.timestamp || alert.timestamp < oneDayAgo) return;
-        if (!isValidVNCoordinate(alert.lat, alert.lng)) return;
-        if (!alertMarkers[id]) {
-            const marker = L.marker([alert.lat, alert.lng], { icon: alertIcon })
-                .addTo(map)
-                .bindPopup(getAlertPopupContent(alert));
-            alertMarkers[id] = marker;
-        }
-        const now = Date.now();
-        const isMyAlert = (alert.created_by === myUsername);
-        const isRecent = (now - alert.timestamp) < 15000;
-        if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
-            playedAlerts.add(id);
-            savePlayedAlerts();
-            if (audioActivated && alertSound) {
-                alertSound.currentTime = 0;
-                alertSound.play().catch(() => {});
-            }
-            if (!map._animatingZoom && !userDragging) {
-                map.flyTo([alert.lat, alert.lng], 17, { animate: true, duration: 1.5 });
-            }
-            setTimeout(() => {
-                if (alertSound && !alertSound.paused) { alertSound.pause(); alertSound.currentTime = 0; }
-            }, 15000);
-            alertTimeouts[id] = setTimeout(() => {
-                get(ref(db, 'alerts/' + id)).then((snapshot) => {
-                    const currentAlert = snapshot.val();
-                    if (currentAlert && currentAlert.status === 'pending') {
-                        removeAlertMarker(id);
-                        update(ref(db, 'alerts/' + id), { status: 'expired' });
-                    }
-                });
-            }, 20000);
-        }
-    });
-
-    onChildChanged(alertsRef, (data) => {
-        const alert = data.val();
-        const id = data.key;
-        if (!alert) return;
-        if (alertMarkers[id]) {
-            alertMarkers[id].setPopupContent(getAlertPopupContent(alert));
-            if (["accepted", "resolved", "expired"].includes(alert.status)) removeAlertMarker(id);
-        }
-    });
-    onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
-
-    // ========== TRACKS ==========
-    function loadUserTracks(userId, userName, show) {
-        const tracksRef = ref(db, 'tracks/' + userId + '/points');
-        const tracksQuery = query(tracksRef, limitToLast(30));
-        if (!show) {
-            if (trackPolylines[userId]) { map.removeLayer(trackPolylines[userId]); delete trackPolylines[userId]; }
-            if (activeTrackListeners[userId]) {
-                off(activeTrackListeners[userId].query, activeTrackListeners[userId].callback);
-                delete activeTrackListeners[userId];
-            }
-            return;
-        }
-        if (activeTrackListeners[userId]) return;
-        if (!trackPolylines[userId]) {
-            const hue = (userName.split('').reduce((a,b) => a + b.charCodeAt(0), 0) * 31) % 360;
-            const color = `hsl(${hue}, 70%, 50%)`;
-            trackPolylines[userId] = L.polyline([], { color: color, weight: 3, opacity: 0.7, smoothFactor: 5, noClip: true, renderer: L.canvas() }).addTo(map);
-        }
-        const callback = (snapshot) => {
-            const point = snapshot.val();
-            if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') return;
-            if (!isValidVNCoordinate(point.lat, point.lng)) return;
-            trackPolylines[userId].addLatLng([point.lat, point.lng]);
-            if (trackPolylines[userId].getLatLngs().length > 30) {
-                const latlngs = trackPolylines[userId].getLatLngs();
-                const simplified = [];
-                for (let i = 0; i < latlngs.length; i++) {
-                    if (i === 0 || i === latlngs.length-1) { simplified.push(latlngs[i]); continue; }
-                    const prev = latlngs[i-1];
-                    const curr = latlngs[i];
-                    const next = latlngs[i+1];
-                    const angle = Math.abs(getBearing(prev.lat, prev.lng, curr.lat, curr.lng) - getBearing(curr.lat, curr.lng, next.lat, next.lng));
-                    if (angle > 15 && haversine(prev.lat, prev.lng, curr.lat, curr.lng) > 5) simplified.push(curr);
-                }
-                trackPolylines[userId].setLatLngs(simplified);
-            }
         };
-        onChildAdded(tracksQuery, callback);
-        activeTrackListeners[userId] = { query: tracksQuery, callback: callback };
+        document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
-    function initAllTracks() {
-        Object.entries(safeShowTracks).forEach(([uid, show]) => {
-            if (show && allOfficers[uid]) loadUserTracks(uid, allOfficers[uid].name, true);
-        });
-    }
-
-    // ========== MARKERS & INCIDENTS ==========
-    const markersRootRef = ref(db, 'markers');
-    onChildAdded(markersRootRef, (userSnapshot) => {
-        const userId = userSnapshot.key;
-        const userMarkersRef = ref(db, `markers/${userId}`);
-        onChildAdded(userMarkersRef, (markerSnapshot) => {
-            const point = markerSnapshot.val();
-            if (!point || !point.timestamp) return;
-            const markerId = markerSnapshot.key;
-            const fullId = `${userId}_${markerId}`;
-            const age = Date.now() - point.timestamp;
-            if (age > 24*60*60*1000) { remove(ref(db, `markers/${userId}/${markerId}`)); return; }
-            if (isValidVNCoordinate(point.lat, point.lng)) {
-                const marker = L.circleMarker([point.lat, point.lng], {
-                    radius: 6, color: '#ffaa00', fillColor: '#ffaa00', fillOpacity: 0.8, weight: 1,
-                    renderer: L.canvas()
-                }).addTo(map);
-                let popupContent = `<b>${point.created_by || 'Unknown'}</b><br>${point.note || ''}<br>${new Date(point.timestamp).toLocaleString()}`;
-                const canDelete = (point.created_by === myName) || (role === 'commander') || (role === 'admin');
-                if (canDelete) popupContent += `<br><button class="delete-btn" data-fullid="${fullId}" data-userid="${userId}" data-markerid="${markerId}">🗑️ Xoá điểm</button>`;
-                marker.bindPopup(popupContent);
-                pointMarkers[fullId] = marker;
-            }
-        });
-        onChildRemoved(userMarkersRef, (markerSnapshot) => {
-            const markerId = markerSnapshot.key;
-            const fullId = `${userId}_${markerId}`;
-            if (pointMarkers[fullId]) { map.removeLayer(pointMarkers[fullId]); delete pointMarkers[fullId]; }
-        });
-    });
-
-    const incidentsRef = ref(db, 'incidents');
-    const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
-    onChildAdded(incidentsRef, (data) => {
-        const inc = data.val();
-        const id = data.key;
-        if (!inc || !inc.timestamp) return;
-        const age = Date.now() - inc.timestamp;
-        if (age > 24*60*60*1000) { remove(ref(db, 'incidents/' + id)); return; }
-        if (isValidVNCoordinate(inc.lat, inc.lng)) {
-            const marker = L.marker([inc.lat, inc.lng], { icon: incidentIcon }).addTo(map)
-                .bindPopup(`<b>${inc.created_by || 'Unknown'}</b><br> ${inc.note || ''}<br> <img src="${inc.image_url}" style="max-width:200px; max-height:200px;"><br> ${new Date(inc.timestamp).toLocaleString()}`);
-            incidentMarkers[id] = marker;
+    initMap();
+    initAudio();
+    document.addEventListener("click", () => {
+        if (!audioActivated && alertSound) {
+            alertSound.load();
+            audioActivated = true;
         }
     });
-    onChildRemoved(incidentsRef, (data) => { const id = data.key; if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } });
 
-    // ========== MOVE ORDERS ==========
-    const moveOrdersRef = ref(db, 'move_orders');
-    onChildAdded(moveOrdersRef, (snapshot) => {
-        if (!map) return;
-        const order = snapshot.val();
-        const orderId = snapshot.key;
-        if (!order || order.status !== 'active') return;
-        if (!isValidVNCoordinate(order.toLat, order.toLng)) return;
-        const latlngs = [[order.fromLat, order.fromLng], [order.toLat, order.toLng]];
-        const polyline = L.polyline(latlngs, { color: '#ff8800', weight: 4, opacity: 0.8, dashArray: '5, 10', renderer: L.canvas() }).addTo(map);
-        if (polyline.arrowheads) polyline.arrowheads({ size: '12px', frequency: 'all', color: '#ff8800' });
-        const officerName = allOfficers[order.officerId]?.name || order.officerId;
-        let popupContent = `📍 Lệnh di chuyển<br>Từ: ${order.commanderName}<br>Đến: ${officerName}<br>Điểm đến: ${order.toLat.toFixed(6)}, ${order.toLng.toFixed(6)}<br>Ghi chú: ${order.note || 'không'}`;
-        const canCancel = (order.commanderId === myUsername) || (role === 'commander') || (role === 'admin');
-        if (canCancel) popupContent += `<br><button class="delete-btn" data-orderid="${orderId}">❌ Huỷ lệnh</button>`;
-        polyline.bindPopup(popupContent);
-        moveOrderLines[orderId] = polyline;
-        if (order.officerId === myUsername) {
-            L.popup().setLatLng([order.toLat, order.toLng]).setContent(`🚶 Bạn được lệnh di chuyển đến đây từ ${order.commanderName}<br>Ghi chú: ${order.note || 'không'}`).openOn(map);
+    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                if (!isValidVNCoordinate(lat, lng)) return;
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now()
+                };
+                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+            },
+            (error) => {
+                console.error("GPS error:", error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 10000
+            }
+        );
+    } else {
+        console.warn("Geolocation not supported");
+    }
+
+    // Khởi tạo officers từ safeInitialOfficers
+    for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            allOfficers[uid] = officer;
+            updateOfficerMarker(uid, officer);
+        }
+    }
+
+    // Real-time listeners
+    const officersRef = ref(db, 'officers');
+    onDisconnect(ref(db, 'officers/' + myUsername)).remove();
+
+    onChildAdded(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        const officer = snapshot.val();
+        if (!officer) return;
+        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+        allOfficers[id] = officer;
+        updateOfficerMarker(id, officer);
+        if (id === myUsername && !sessionStorage.getItem('zoomedToMe')) {
+            map.setView([officer.lat, officer.lng], 16);
+            sessionStorage.setItem('zoomedToMe', 'true');
         }
     });
-    onChildRemoved(moveOrdersRef, (snapshot) => {
-        const orderId = snapshot.key;
-        if (moveOrderLines[orderId]) { map.removeLayer(moveOrderLines[orderId]); delete moveOrderLines[orderId]; }
+
+    onChildChanged(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        const officer = snapshot.val();
+        if (!officer) return;
+        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+        allOfficers[id] = officer;
+        updateOfficerMarker(id, officer);
     });
-    function checkOrdersCompletion() {
-        get(moveOrdersRef).then((snapshot) => {
-            const orders = snapshot.val() || {};
-            for (const [orderId, order] of Object.entries(orders)) {
-                if (order.status !== 'active') continue;
-                const officerPos = allOfficers[order.officerId];
-                if (!officerPos) continue;
-                const dist = haversine(officerPos.lat, officerPos.lng, order.toLat, order.toLng);
-                if (dist < 20) remove(ref(db, 'move_orders/' + orderId));
-            }
-        }).catch(console.error);
-    }
-    setInterval(checkOrdersCompletion, 5000);
 
-    function zoomToAllOfficers() {
-        const officersList = Object.values(allOfficers).filter(o => isValidVNCoordinate(o.lat, o.lng));
-        if (officersList.length === 0) return;
-        const bounds = L.latLngBounds(officersList.map(o => [o.lat, o.lng]));
-        map.fitBounds(bounds, { padding: [50, 50], animate: false });
-    }
-    setTimeout(zoomToAllOfficers, 2000);
+    onChildRemoved(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        delete allOfficers[id];
+        removeOfficerMarker(id);
+    });
 
-    if (role === 'commander' || role === 'admin') {
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = '🗑️ Xoá tất cả nét vẽ di chuyển và vẽ sơ đồ';
-        clearBtn.className = 'clear-orders-btn';
-        clearBtn.onclick = async () => {
-            if (confirm('Bạn có chắc muốn xoá TOÀN BỘ lệnh di chuyển đang hoạt động?')) {
-                await remove(moveOrdersRef);
-                Object.keys(moveOrderLines).forEach(orderId => {
-                    if (moveOrderLines[orderId]) { map.removeLayer(moveOrderLines[orderId]); delete moveOrderLines[orderId]; }
-                });
-                alert('Đã xoá tất cả lệnh di chuyển.');
-            }
-        };
-        document.body.appendChild(clearBtn);
-    }
+    // Stationary officers
+    safeStationaryOfficers.forEach(officer => {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            L.circleMarker([officer.lat, officer.lng], {
+                radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
+                renderer: L.canvas()
+            }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
+        }
+    });
 
-    // ========== DIALOG THÊM ĐIỂM ==========
-    function showPointDialog(latlng) {
-        if (drawingMode || arrowMode) return;
-        const oldOverlay = document.getElementById('dialog-overlay');
-        if (oldOverlay) oldOverlay.remove();
-        const overlay = document.createElement('div');
-        overlay.id = 'dialog-overlay';
-        overlay.className = 'dialog-overlay';
-        document.body.appendChild(overlay);
-        const dialog = document.createElement('div');
-        dialog.className = 'custom-dialog';
-        if (role === 'officer') {
-            dialog.innerHTML = `<h4>📍 Đánh dấu điểm</h4><input type="text" id="point-note" placeholder="Ghi chú (bắt buộc)" /><div style="margin-top:12px;"><button id="dialog-ok">Đánh dấu</button><button id="dialog-cancel">Hủy</button></div>`;
-        } else {
-            dialog.innerHTML = `<h4>📍 Tùy chọn tại điểm</h4><input type="text" id="point-note" placeholder="Ghi chú (bắt buộc nếu đánh dấu điểm)" /><select id="officer-select"><option value="">-- Chọn cán bộ để ra lệnh (không chọn = đánh dấu điểm) --</option></select><div style="margin-top:12px;"><button id="dialog-ok">Xác nhận</button><button id="dialog-cancel">Hủy</button></div>`;
-        }
-        document.body.appendChild(dialog);
-        if (role !== 'officer') {
-            const select = dialog.querySelector('#officer-select');
-            if (select) {
-                for (const [uid, officer] of Object.entries(allOfficers)) {
-                    if (uid !== myUsername) {
-                        const name = officer.name || uid;
-                        const option = document.createElement('option');
-                        option.value = uid;
-                        option.textContent = name;
-                        select.appendChild(option);
-                    }
-                }
-            }
-        }
-        const okBtn = dialog.querySelector('#dialog-ok');
-        const cancelBtn = dialog.querySelector('#dialog-cancel');
-        const noteInput = dialog.querySelector('#point-note');
-        if (okBtn) {
-            okBtn.onclick = () => {
-                const note = noteInput ? noteInput.value.trim() : '';
-                if (!note) { alert("Vui lòng nhập ghi chú."); return; }
-                if (role === 'officer') {
-                    push(ref(db, 'markers/' + myUsername), { created_by: myName, lat: latlng.lat, lng: latlng.lng, note: note, timestamp: Date.now() });
-                } else {
-                    const selectedOfficerUid = document.getElementById('officer-select')?.value;
-                    if (!selectedOfficerUid) {
-                        push(ref(db, 'markers/' + myUsername), { created_by: myName, lat: latlng.lat, lng: latlng.lng, note: note, timestamp: Date.now() });
-                    } else {
-                        const startOfficer = allOfficers[selectedOfficerUid];
-                        if (!startOfficer || !isValidVNCoordinate(startOfficer.lat, startOfficer.lng)) {
-                            alert("Không tìm thấy vị trí cán bộ này.");
-                            dialog.remove(); overlay.remove(); return;
-                        }
-                        const orderData = {
-                            officerId: selectedOfficerUid, fromLat: startOfficer.lat, fromLng: startOfficer.lng,
-                            toLat: latlng.lat, toLng: latlng.lng, commanderName: myName, commanderId: myUsername,
-                            timestamp: Date.now(), status: 'active', note: note
-                        };
-                        push(ref(db, 'move_orders'), orderData);
-                        const selectName = document.querySelector('#officer-select option:checked')?.text || selectedOfficerUid;
-                        push(ref(db, 'logs'), {
-                            commander: myName, commanderId: myUsername, targetId: selectedOfficerUid,
-                            targetName: selectName, lat: latlng.lat, lng: latlng.lng, time: Date.now(),
-                            action: 'move_order', note: note
-                        });
-                        const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
-                        tempMarker.bindPopup(`📍 Đã ra lệnh cho ${selectName}`).openPopup();
-                        setTimeout(() => map.removeLayer(tempMarker), 5000);
-                    }
-                }
-                dialog.remove(); overlay.remove();
-            };
-        }
-        if (cancelBtn) cancelBtn.onclick = () => { dialog.remove(); overlay.remove(); };
-    }
+    // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
+    <!-- ALERTS_JS -->
+    <!-- DRAW_JS -->
+    <!-- TRACKING_JS -->
+    <!-- EVENTS_JS -->
+    <!-- MAP_JS -->
 
-    // ========== RA LỆNH TỪ SIDEBAR ==========
-    if (role === 'commander' || role === 'admin') {
-        function activateSelectionMode(officerId, officerName) {
-            if (selectionMode) return;
-            selectionMode = true;
-            selectedOfficerId = officerId;
-            selectedOfficerName = officerName;
-            hasSelected = false;
-            const infoControl = L.control({ position: 'topright' });
-            infoControl.onAdd = () => {
-                const div = L.DomUtil.create('div', 'selection-info');
-                div.innerHTML = `<span>📍 Giữ 5 giây trên map để chọn điểm cho <b>${officerName}</b></span><button id="cancel-order-btn" class="cancel-btn">Hủy</button>`;
-                L.DomEvent.disableClickPropagation(div);
-                return div;
-            };
-            infoControl.addTo(map);
-            tempInfoControl = infoControl;
-            setTimeout(() => {
-                const cancelBtn = document.getElementById('cancel-order-btn');
-                if (cancelBtn) cancelBtn.onclick = () => deactivateSelectionMode();
-            }, 100);
-            map.getContainer().style.cursor = 'crosshair';
-            map.on('touchstart', (e) => {
-                if (!selectionMode || hasSelected) return;
-                const touch = e.originalEvent.touches[0];
-                const latlng = map.mouseEventToLatLng(touch);
-                holdTimer = setTimeout(() => {
-                    if (hasSelected) return;
-                    hasSelected = true;
-                    const endLat = latlng.lat;
-                    const endLng = latlng.lng;
-                    const startOfficer = allOfficers[selectedOfficerId];
-                    if (startOfficer) {
-                        const orderData = {
-                            officerId: selectedOfficerId, fromLat: startOfficer.lat, fromLng: startOfficer.lng,
-                            toLat: endLat, toLng: endLng, commanderName: myName, commanderId: myUsername,
-                            timestamp: Date.now(), status: 'active', note: ""
-                        };
-                        push(ref(db, 'move_orders'), orderData);
-                        push(ref(db, 'logs'), {
-                            commander: myName, commanderId: myUsername, targetId: selectedOfficerId,
-                            targetName: selectedOfficerName, lat: endLat, lng: endLng, time: Date.now(),
-                            action: 'move_order', note: ""
-                        });
-                        const marker = L.marker([endLat, endLng]).addTo(map);
-                        marker.bindPopup("📍 Đã chọn điểm (giữ 5s)").openPopup();
-                        setTimeout(() => map.removeLayer(marker), 5000);
-                        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                    }
-                    deactivateSelectionMode();
-                }, 5000);
-            });
-            map.on('touchend', () => clearTimeout(holdTimer));
-            map.on('touchcancel', () => clearTimeout(holdTimer));
-        }
-        function deactivateSelectionMode() {
-            if (!selectionMode) return;
-            if (tempInfoControl) map.removeControl(tempInfoControl);
-            map.getContainer().style.cursor = '';
-            if (holdTimer) clearTimeout(holdTimer);
-            selectionMode = false;
-            selectedOfficerId = null;
-            selectedOfficerName = null;
-            tempInfoControl = null;
-            hasSelected = false;
-        }
-        if (window.pendingOrder && window.pendingOrder.officerId) {
-            const checkInterval = setInterval(() => {
-                if (allOfficers[window.pendingOrder.officerId]) {
-                    clearInterval(checkInterval);
-                    activateSelectionMode(window.pendingOrder.officerId, window.pendingOrder.officerName);
-                }
-            }, 200);
-        }
-    }
-
-    // ========== CÁC HÀM VẼ ==========
-    function startDrawing() {
-        tempPoints = [];
-        if (tempPolyline) map.removeLayer(tempPolyline);
-        map.on('click', onMapClick);
-        map.getContainer().style.cursor = 'crosshair';
-    }
-    function cancelDrawing() {
-        map.off('click', onMapClick);
-        if (tempPolyline) { map.removeLayer(tempPolyline); tempPolyline = null; }
-        tempPoints = [];
-        map.getContainer().style.cursor = '';
-    }
-    function onMapClick(e) {
-        if (!drawingMode) return;
-        const { lat, lng } = e.latlng;
-        tempPoints.push([lat, lng]);
-        if (tempPolyline) map.removeLayer(tempPolyline);
-        tempPolyline = L.polyline(tempPoints, { color: drawingColor, weight: drawingWeight, opacity: 0.8 }).addTo(map);
-    }
-    function saveDrawing() {
-        if (tempPoints.length < 2) { alert("Cần ít nhất 2 điểm để vẽ."); return; }
-        const drawingData = {
-            points: tempPoints.map(p => ({ lat: p[0], lng: p[1] })),
-            color: drawingColor,
-            weight: drawingWeight,
-            author: myName,
-            authorId: myUsername,
-            timestamp: Date.now(),
-            type: 'draw'
-        };
-        push(ref(db, 'drawings'), drawingData);
-        cancelDrawing();
-        drawingMode = false;
-        const drawToggle = document.getElementById('draw-toggle');
-        const drawFinish = document.getElementById('draw-finish');
-        if (drawToggle) drawToggle.style.background = '';
-        if (drawFinish) drawFinish.style.display = 'none';
-    }
-
-    // ========== NÚT KHÓA MÀN HÌNH ==========
-    const lockBtn = document.getElementById('lockScreenBtn');
-    const lockOverlay = document.getElementById('lockOverlay');
+    // ==================== NÚT KHÓA MÀN HÌNH ====================
+    const lockBtn = document.getElementById("lockBtn");
+    const lockOverlay = document.getElementById("lockOverlay");
     let isLocked = false;
-    function setLock(lock) {
-        isLocked = lock;
+
+    lockBtn.onclick = () => {
+        isLocked = !isLocked;
         if (isLocked) {
-            lockOverlay.style.display = 'flex';
-            lockBtn.innerHTML = '🔓 Mở khóa';
-            lockBtn.style.background = '#ef4444';
-            if (navigator.vibrate) navigator.vibrate(200);
+            lockOverlay.style.display = "flex";
+            lockBtn.textContent = "🔓 Mở khóa";
+            if (navigator.vibrate) navigator.vibrate(100);
         } else {
-            lockOverlay.style.display = 'none';
-            lockBtn.innerHTML = '🔒 Khóa màn hình';
-            lockBtn.style.background = '#1e293b';
+            lockOverlay.style.display = "none";
+            lockBtn.textContent = "🔒 Khóa";
             if (navigator.vibrate) navigator.vibrate(100);
         }
-    }
-    lockBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        setLock(!isLocked);
-    });
-    lockOverlay.addEventListener('click', (e) => e.stopPropagation());
-
-    // ========== TOOLBAR CHO COMMANDER/ADMIN ==========
-    if (role === 'commander' || role === 'admin') {
-        const toolbar = L.control({ position: 'topright' });
-        toolbar.onAdd = () => {
-            const div = L.DomUtil.create('div', 'drawing-toolbar');
-            div.innerHTML = `
-                <div style="background:white; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-                    <button id="draw-toggle" style="margin:2px; padding:4px 8px;">✏️ Vẽ</button>
-                    <button id="draw-finish" style="margin:2px; padding:4px 8px; display:none; background:#4caf50; color:white;">✅ Hoàn tất</button>
-                    <input type="color" id="draw-color" value="${drawingColor}" style="width:30px; height:30px; margin:2px;">
-                    <input type="range" id="draw-weight" min="2" max="10" step="1" value="${drawingWeight}" style="width:80px; margin:2px;">
-                    <button id="clear-all-drawings" style="margin:2px; padding:4px 8px; background:#ff4444; color:white;">🗑️ Xóa tất cả vẽ hướng đối tượng</button>
-                    <button id="clear-all-alerts" style="margin:2px; padding:4px 8px; background:#ff4444; color:white;">🚨 Xoá tất cả báo động</button>
-                </div>
-            `;
-            L.DomEvent.disableClickPropagation(div);
-            return div;
-        };
-        toolbar.addTo(map);
-
-        const drawToggle = document.getElementById('draw-toggle');
-        const drawFinish = document.getElementById('draw-finish');
-        if (drawToggle) {
-            drawToggle.addEventListener('click', () => {
-                drawingMode = !drawingMode;
-                if (drawingMode) {
-                    drawToggle.style.background = '#4caf50';
-                    drawToggle.style.color = 'white';
-                    if (drawFinish) drawFinish.style.display = 'inline-block';
-                    startDrawing();
-                } else {
-                    drawToggle.style.background = '';
-                    drawToggle.style.color = '';
-                    if (drawFinish) drawFinish.style.display = 'none';
-                    cancelDrawing();
-                }
-            });
-        }
-        if (drawFinish) {
-            drawFinish.addEventListener('click', () => {
-                if (drawingMode && tempPoints.length >= 2) saveDrawing();
-                drawingMode = false;
-                if (drawToggle) drawToggle.style.background = '';
-                drawFinish.style.display = 'none';
-                cancelDrawing();
-            });
-        }
-        const colorPicker = document.getElementById('draw-color');
-        if (colorPicker) colorPicker.addEventListener('change', (e) => { drawingColor = e.target.value; });
-        const weightSlider = document.getElementById('draw-weight');
-        if (weightSlider) weightSlider.addEventListener('change', (e) => { drawingWeight = parseInt(e.target.value); });
-        const clearDrawingsBtn = document.getElementById('clear-all-drawings');
-        if (clearDrawingsBtn) clearDrawingsBtn.addEventListener('click', async () => {
-            if (confirm('Xóa tất cả nét vẽ?')) await remove(ref(db, 'drawings'));
-        });
-        const clearAlertsBtn = document.getElementById('clear-all-alerts');
-        if (clearAlertsBtn) clearAlertsBtn.addEventListener('click', async () => {
-            if (confirm('Xoá tất cả báo động đang hiển thị?')) {
-                await remove(alertsRef);
-                Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
-            }
-        });
-    }
-
-    if (role === 'officer') {
-        const arrowToolbar = L.control({ position: 'topright' });
-        arrowToolbar.onAdd = () => {
-            const div = L.DomUtil.create('div', 'drawing-toolbar');
-            div.innerHTML = `
-                <div style="background:white; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-                    <button id="arrow-toggle" style="margin:2px; padding:4px 8px; background:#ff0000; color:white;">🚨 Báo hướng đối tượng</button>
-                </div>
-            `;
-            L.DomEvent.disableClickPropagation(div);
-            return div;
-        };
-        arrowToolbar.addTo(map);
-        const arrowToggle = document.getElementById('arrow-toggle');
-        if (arrowToggle) {
-            arrowToggle.addEventListener('click', () => {
-                if (arrowMode) {
-                    arrowMode = false;
-                    arrowToggle.style.background = '#ff0000';
-                    arrowToggle.style.color = 'white';
-                    if (arrowTempLine) map.removeLayer(arrowTempLine);
-                    arrowStart = null;
-                    map.getContainer().style.cursor = '';
-                } else {
-                    arrowMode = true;
-                    arrowToggle.style.background = '#cc0000';
-                    arrowToggle.style.color = 'white';
-                    map.getContainer().style.cursor = 'crosshair';
-                    arrowStart = null;
-                    if (arrowTempLine) map.removeLayer(arrowTempLine);
-                }
-            });
-        }
-        function handleArrowClick(e) {
-            if (!arrowMode) return;
-            const { lat, lng } = e.latlng;
-            if (arrowStart === null) {
-                arrowStart = [lat, lng];
-                arrowTempLine = L.circleMarker(arrowStart, { radius: 8, color: 'red', fillColor: 'red', fillOpacity: 0.7 }).addTo(map);
-            } else {
-                const start = arrowStart;
-                const end = [lat, lng];
-                const arrowLine = L.polyline([start, end], { color: 'red', weight: 4, opacity: 0.9 }).addTo(map);
-                if (arrowLine.arrowheads) arrowLine.arrowheads({ size: '15px', frequency: 'all', color: 'red' });
-                const drawingData = {
-                    points: [{ lat: start[0], lng: start[1] }, { lat: end[0], lng: end[1] }],
-                    color: 'red',
-                    weight: 4,
-                    author: myName,
-                    authorId: myUsername,
-                    timestamp: Date.now(),
-                    type: 'arrow'
-                };
-                push(ref(db, 'drawings'), drawingData);
-                const alertData = {
-                    name: `Hướng di chuyển từ ${myName}`,
-                    lat: end[0],
-                    lng: end[1],
-                    assigned: [],
-                    status: 'pending',
-                    timestamp: Date.now(),
-                    created_by: myUsername,
-                    arrowAlert: true
-                };
-                push(ref(db, 'alerts'), alertData);
-                arrowMode = false;
-                if (arrowToggle) arrowToggle.style.background = '#ff0000';
-                map.getContainer().style.cursor = '';
-                if (arrowTempLine) map.removeLayer(arrowTempLine);
-                arrowStart = null;
-                alert('Đã gửi báo hướng di chuyển!');
-            }
-        }
-        map.on('click', handleArrowClick);
-    }
-
-    const drawingsRef = ref(db, 'drawings');
-    document.addEventListener('click', async (e) => {
-        if (e.target && e.target.classList.contains('delete-drawing')) {
-            const id = e.target.getAttribute('data-id');
-            if (!id) return;
-            if (confirm("Xóa nét vẽ này?")) await remove(ref(db, 'drawings/' + id));
-        }
-    });
-    onChildAdded(drawingsRef, (snapshot) => {
-        if (!map) return;
-        const id = snapshot.key;
-        const drawing = snapshot.val();
-        if (!drawing || !drawing.points || drawing.points.length < 2) return;
-        if (drawingLayers[id]) return;
-        const latlngs = drawing.points.map(p => [p.lat, p.lng]);
-        const polyline = L.polyline(latlngs, {
-            color: drawing.color || '#ff0000',
-            weight: drawing.weight || 3,
-            opacity: 0.8
-        }).addTo(map);
-        if (drawing.type === 'arrow' && polyline.arrowheads) polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
-        let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
-        const canDelete = (role === 'commander' || role === 'admin' || drawing.authorId === myUsername);
-        if (canDelete) popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa nét vẽ</button>`;
-        polyline.bindPopup(popupContent);
-        drawingLayers[id] = polyline;
-    });
-    onChildRemoved(drawingsRef, (snapshot) => {
-        const id = snapshot.key;
-        if (drawingLayers[id]) { map.removeLayer(drawingLayers[id]); delete drawingLayers[id]; }
-    });
-    onValue(drawingsRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        const currentIds = new Set(Object.keys(data));
-        Object.keys(drawingLayers).forEach(id => {
-            if (!currentIds.has(id)) { map.removeLayer(drawingLayers[id]); delete drawingLayers[id]; }
-        });
-    });
-
-    // ========== KHỞI CHẠY (TẤT CẢ SAU KHI MAP INIT) ==========
-    document.addEventListener('DOMContentLoaded', () => {
-        initMap();               // tạo map trước
-        initRealtime();         // lắng nghe realtime
-        initOfficersFromInitial();
-        initAudio();
-
-        // Gắn các sự kiện cần map.on sau khi map đã tồn tại
-        map.on('contextmenu', (e) => {
-            if (selectionMode || drawingMode || arrowMode) return;
-            e.originalEvent.preventDefault();
-            showPointDialog(e.latlng);
-        });
-        let touchTimer = null;
-        map.on('touchstart', (e) => {
-            if (selectionMode || drawingMode || arrowMode) return;
-            const touch = e.originalEvent.touches[0];
-            const latlng = map.mouseEventToLatLng(touch);
-            touchTimer = setTimeout(() => showPointDialog(latlng), 800);
-        });
-        map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
-        map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
-
-        setTimeout(() => {
-            initAllTracks();
-        }, 1000);
-    });
+    };
 </script>
 </body>
 </html>
