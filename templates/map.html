@@ -13,16 +13,8 @@
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-        #map {
-            height: 100%;
-            width: 100%;
-        }
-        .leaflet-container { will-change: transform; }
+        html, body { height: 100%; margin: 0; padding: 0; }
+        #map { height: 100%; width: 100%; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
         .alert-marker { width: 24px; height: 24px; background: red; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px red; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
@@ -32,19 +24,7 @@
         .leaflet-marker-icon { transition: transform 0.2s ease; }
         .leaflet-marker-icon:hover { transform: scale(1.3); }
         * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-        .custom-dialog {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            z-index: 2000;
-            width: 280px;
-            padding: 16px;
-            font-family: sans-serif;
-        }
+        .custom-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 2000; width: 280px; padding: 16px; font-family: sans-serif; }
         .custom-dialog h4 { margin-top: 0; margin-bottom: 12px; }
         .custom-dialog input, .custom-dialog select { width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; }
         .custom-dialog button { padding: 8px 12px; margin-right: 8px; border: none; border-radius: 6px; cursor: pointer; }
@@ -121,6 +101,7 @@
     let userDragging = false;
     let watchId = null;
     let sharingEnabled = false;
+    let heatLayer = null;
 
     // ========== HÀM TIỆN ÍCH ==========
     function isValidVNCoordinate(lat, lng) {
@@ -190,9 +171,7 @@
         if (uid === myUsername) return safeUserColors[uid] || '#0066cc';
         const now = Date.now();
         const diff = now - lastUpdate;
-        if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) {
-            return '#9ca3af';
-        }
+        if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) return '#9ca3af';
         return safeUserColors[uid] || '#0066cc';
     }
 
@@ -200,11 +179,9 @@
         if (!map || !officerClusterGroup) return;
         if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-
         const latlng = [officer.lat, officer.lng];
         const lastUpdate = officer.lastUpdate || 0;
         const color = getOfficerColorWithStatus(uid, lastUpdate);
-
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
@@ -290,11 +267,8 @@
             updateWhenZooming: false
         }).addTo(map);
         officerClusterGroup = L.markerClusterGroup({
-            chunkedLoading: true,
-            maxClusterRadius: 80,
-            spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false,
-            zoomToBoundsOnClick: true
+            chunkedLoading: true, maxClusterRadius: 80, spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false, zoomToBoundsOnClick: true
         });
         map.addLayer(officerClusterGroup);
         map.on('moveend', () => {
@@ -330,9 +304,7 @@
             }
         });
         const requestNotificationPermission = () => {
-            if (Notification.permission !== 'granted') {
-                Notification.requestPermission();
-            }
+            if (Notification.permission !== 'granted') Notification.requestPermission();
         };
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
@@ -357,70 +329,71 @@
         }
     }
 
-    // ========== LẮNG NGHE REALTIME FIREBASE ==========
-    const officersRef = ref(db, 'officers');
-    onDisconnect(ref(db, 'officers/' + myUsername)).remove();
+    // ========== REALTIME (GỌI SAU KHI MAP ĐÃ KHỞI TẠO) ==========
+    function initRealtime() {
+        // Officers realtime
+        const officersRef = ref(db, 'officers');
+        onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
-    onChildAdded(officersRef, (snapshot) => {
-        const id = snapshot.key;
-        const officer = snapshot.val();
-        if (!officer) return;
-        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-        allOfficers[id] = officer;
-        updateOfficerMarker(id, officer);
-        if (id === myUsername && !sessionStorage.getItem('zoomedToMe') && officer.lat && officer.lng) {
-            map.setView([officer.lat, officer.lng], 16);
-            sessionStorage.setItem('zoomedToMe', 'true');
-        }
-    });
+        onChildAdded(officersRef, (snapshot) => {
+            const id = snapshot.key;
+            const officer = snapshot.val();
+            if (!officer) return;
+            if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+            if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+            allOfficers[id] = officer;
+            updateOfficerMarker(id, officer);
+            if (id === myUsername && !sessionStorage.getItem('zoomedToMe') && officer.lat && officer.lng) {
+                map.setView([officer.lat, officer.lng], 16);
+                sessionStorage.setItem('zoomedToMe', 'true');
+            }
+        });
 
-    onChildChanged(officersRef, (snapshot) => {
-        const id = snapshot.key;
-        const officer = snapshot.val();
-        if (!officer) return;
-        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
-        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
-        allOfficers[id] = officer;
-        updateOfficerMarker(id, officer);
-    });
+        onChildChanged(officersRef, (snapshot) => {
+            const id = snapshot.key;
+            const officer = snapshot.val();
+            if (!officer) return;
+            if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+            if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+            allOfficers[id] = officer;
+            updateOfficerMarker(id, officer);
+        });
 
-    onChildRemoved(officersRef, (snapshot) => {
-        const id = snapshot.key;
-        delete allOfficers[id];
-        removeOfficerMarker(id);
-    });
+        onChildRemoved(officersRef, (snapshot) => {
+            const id = snapshot.key;
+            delete allOfficers[id];
+            removeOfficerMarker(id);
+        });
 
-    safeStationaryOfficers.forEach(officer => {
-        if (isValidVNCoordinate(officer.lat, officer.lng)) {
-            L.circleMarker([officer.lat, officer.lng], {
-                radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
-                renderer: L.canvas()
-            }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
-        }
-    });
+        // Heatmap
+        const incidentsHeatRef = ref(db, 'incidents');
+        onValue(incidentsHeatRef, (snapshot) => {
+            const data = snapshot.val();
+            const heatPoints = [];
+            if (data) {
+                Object.values(data).forEach(inc => {
+                    if (inc && inc.lat && inc.lng) heatPoints.push([inc.lat, inc.lng, 0.5]);
+                });
+            }
+            if (heatLayer) map.removeLayer(heatLayer);
+            if (heatPoints.length) {
+                heatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15, maxZoom: 17 });
+                heatLayer.addTo(map);
+            }
+        });
 
-    // ========== HEATMAP TỪ INCIDENTS ==========
-    let heatLayer = null;
-    const incidentsHeatRef = ref(db, 'incidents');
-    onValue(incidentsHeatRef, (snapshot) => {
-        const data = snapshot.val();
-        const heatPoints = [];
-        if (data) {
-            Object.values(data).forEach(inc => {
-                if (inc && inc.lat && inc.lng) {
-                    heatPoints.push([inc.lat, inc.lng, 0.5]);
-                }
-            });
-        }
-        if (heatLayer) map.removeLayer(heatLayer);
-        if (heatPoints.length) {
-            heatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15, maxZoom: 17 });
-            heatLayer.addTo(map);
-        }
-    });
+        // Stationary officers
+        safeStationaryOfficers.forEach(officer => {
+            if (isValidVNCoordinate(officer.lat, officer.lng)) {
+                L.circleMarker([officer.lat, officer.lng], {
+                    radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
+                    renderer: L.canvas()
+                }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
+            }
+        });
+    }
 
-    // ========== ALERTS (BÁO ĐỘNG) ==========
+    // ========== ALERTS ==========
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
     const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
@@ -535,9 +508,7 @@
         }
         if (drawFinish) {
             drawFinish.addEventListener('click', () => {
-                if (drawingMode && tempPoints.length >= 2) {
-                    saveDrawing();
-                }
+                if (drawingMode && tempPoints.length >= 2) saveDrawing();
                 drawingMode = false;
                 if (drawToggle) drawToggle.style.background = '';
                 drawFinish.style.display = 'none';
@@ -722,8 +693,7 @@
         });
     }
 
-    // ========== MARKERS & INCIDENTS (ĐÃ CÓ TRONG EVENTS) ==========
-    // (Tích hợp trực tiếp để tránh phải import file riêng)
+    // ========== MARKERS & INCIDENTS ==========
     const markersRootRef = ref(db, 'markers');
     onChildAdded(markersRootRef, (userSnapshot) => {
         const userId = userSnapshot.key;
@@ -888,7 +858,6 @@
                             timestamp: Date.now(), status: 'active', note: note
                         };
                         push(ref(db, 'move_orders'), orderData);
-                        // Ghi log điều hành
                         const selectName = document.querySelector('#officer-select option:checked')?.text || selectedOfficerUid;
                         push(ref(db, 'logs'), {
                             commander: myName, commanderId: myUsername, targetId: selectedOfficerUid,
@@ -960,7 +929,6 @@
                             timestamp: Date.now(), status: 'active', note: ""
                         };
                         push(ref(db, 'move_orders'), orderData);
-                        // Ghi log điều hành
                         push(ref(db, 'logs'), {
                             commander: myName, commanderId: myUsername, targetId: selectedOfficerId,
                             targetName: selectedOfficerName, lat: endLat, lng: endLng, time: Date.now(),
@@ -998,7 +966,7 @@
         }
     }
 
-    // ========== CÁC HÀM VẼ (startDrawing, cancelDrawing, saveDrawing) ==========
+    // ========== CÁC HÀM VẼ ==========
     function startDrawing() {
         tempPoints = [];
         if (tempPolyline) map.removeLayer(tempPolyline);
@@ -1038,9 +1006,10 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
-    // ========== KHỞI CHẠY ỨNG DỤNG ==========
+    // ========== KHỞI CHẠY ỨNG DỤNG (ĐÃ SỬA ĐÚNG THỨ TỰ) ==========
     document.addEventListener('DOMContentLoaded', () => {
-        initMap();
+        initMap();               // tạo map trước
+        initRealtime();         // sau đó mới gắn listener, thêm layer
         initOfficersFromInitial();
         initAudio();
         setTimeout(() => {
