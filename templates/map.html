@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
+        /* ... giữ nguyên style ... */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
@@ -52,8 +53,8 @@
 <div id="map"></div>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getDatabase, ref, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
-    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
+    import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
     const firebaseConfig = {{ firebase_config }};
     const app = initializeApp(firebaseConfig);
@@ -62,13 +63,24 @@
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    const userRole = {{ user_role }};
-    const showTracks = {{ show_tracks }};
-    const stationaryOfficers = {{ stationary_officers }};
-    const userColors = {{ user_colors }};
-    const initialOfficers = {{ initial_officers }};
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
+
+    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
+    function safeObject(v) {
+        return (typeof v === "object" && v !== null) ? v : {};
+    }
+
+    const safeShowTracks = safeObject(showTracks);
+    const safeInitialOfficers = safeObject(initialOfficers);
+    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
+    const safeUserColors = safeObject(userColors);
+    if (typeof userRole !== 'string') userRole = 'officer';
 
     // Biến toàn cục
     let map = null;
@@ -167,13 +179,13 @@
     }
 
     function getOfficerColorWithStatus(uid, lastUpdate) {
-        if (uid === myUsername) return userColors[uid] || '#0066cc';
+        if (uid === myUsername) return safeUserColors[uid] || '#0066cc';
         const now = Date.now();
         const diff = now - lastUpdate;
         if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) {
             return '#9ca3af';
         }
-        return userColors[uid] || '#0066cc';
+        return safeUserColors[uid] || '#0066cc';
     }
 
     function updateOfficerMarker(uid, officer) {
@@ -229,7 +241,6 @@
             sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
             sessionStorage.setItem('mapZoom', map.getZoom());
         });
-        // Theo dõi user đang kéo
         map.on('dragstart', () => userDragging = true);
         map.on('dragend', () => userDragging = false);
         map.on('zoomstart', () => userDragging = true);
@@ -260,29 +271,22 @@
     document.addEventListener('click', enableNoSleep);
     document.addEventListener('touchstart', enableNoSleep);
 
-    // FCM foreground only (bỏ service worker)
+    // FCM foreground only
     if (fcmVapidKey !== "") {
-        // Không đăng ký service worker, chỉ dùng onMessage để nhận notification khi tab đang mở
         onMessage(messaging, payload => {
-            // Hiển thị notification dạng browser (nếu được cấp quyền)
             if (Notification.permission === 'granted') {
                 new Notification(payload.notification.title, { body: payload.notification.body });
             } else {
-                // Nếu chưa được cấp quyền, có thể yêu cầu sau, nhưng tạm bỏ qua
                 console.log("Notification permission not granted");
             }
         });
-        // Yêu cầu quyền thông báo khi cần (có thể gọi sau khi user tương tác)
         const requestNotificationPermission = () => {
             if (Notification.permission !== 'granted') {
                 Notification.requestPermission().then(permission => {
-                    if (permission === 'granted') {
-                        console.log("Notification permission granted");
-                    }
+                    if (permission === 'granted') console.log("Notification permission granted");
                 });
             }
         };
-        // Gắn sự kiện click toàn trang để yêu cầu quyền (tuân thủ chính sách trình duyệt)
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
@@ -295,8 +299,36 @@
         }
     });
 
-    // Khởi tạo officers từ initialOfficers
-    for (const [uid, officer] of Object.entries(initialOfficers)) {
+    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                if (!isValidVNCoordinate(lat, lng)) return;
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now()
+                };
+                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+            },
+            (error) => {
+                console.error("GPS error:", error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 5000,
+                timeout: 10000
+            }
+        );
+    } else {
+        console.warn("Geolocation not supported");
+    }
+
+    // Khởi tạo officers từ safeInitialOfficers
+    for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
         if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
             allOfficers[uid] = officer;
             updateOfficerMarker(uid, officer);
@@ -338,8 +370,8 @@
     });
 
     // Stationary officers
-    stationaryOfficers.forEach(officer => {
-        if (isValidVNCoordinate(officer.lat, officer.lng)) {
+    safeStationaryOfficers.forEach(officer => {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
             L.circleMarker([officer.lat, officer.lng], {
                 radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
                 renderer: L.canvas()
