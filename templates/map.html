@@ -14,6 +14,26 @@
     <style>
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
+        /* Tooltip tùy chỉnh cho marker */
+        .custom-tooltip {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-family: sans-serif;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .custom-tooltip strong {
+            font-size: 12px;
+            color: #1f2937;
+        }
+        .custom-tooltip .status-text {
+            font-size: 10px;
+            opacity: 0.7;
+            display: block;
+            margin-top: 2px;
+        }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
         .alert-marker { width: 24px; height: 24px; background: red; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px red; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
@@ -50,7 +70,7 @@
         /* Nút khóa màn hình - góc phải dưới */
         #lockBtn {
             position: fixed;
-            bottom: 150px;
+            bottom: 100px;
             right: 20px;
             z-index: 10000;
             background: #1e293b;
@@ -90,8 +110,8 @@
         /* Nút Follow Me */
         #followBtn {
             position: fixed;
-            bottom: 150px;
-            left: 20px;
+            bottom: 20px;
+            right: 20px;
             z-index: 10001;
             background: #10b981;
             color: white;
@@ -232,7 +252,7 @@
         return getStatusColor(status);
     }
 
-    // Cập nhật hàm updateOfficerMarker để hiển thị tooltip có trạng thái
+    // Cập nhật hàm updateOfficerMarker với HTML tooltip
     function updateOfficerMarker(uid, officer) {
         if (!map || !officerClusterGroup) return;
         if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
@@ -242,15 +262,28 @@
         const status = getOfficerStatus(lastUpdate);
         const color = getOfficerColorWithStatus(uid, lastUpdate);
         const statusText = status === "active" ? "🟢 Hoạt động" : (status === "slow" ? "🟡 Chậm" : "⚪ Mất tín hiệu");
-        // Tên viết hoa, xuống dòng, rồi trạng thái
-        const tooltipContent = `${(officer.name || uid).toUpperCase()}<br>${statusText}`;
+        const nameUpper = (officer.name || uid).toUpperCase();
+        // HTML tooltip với tên đậm, trạng thái nhỏ hơn, căn giữa
+        const tooltipHTML = `<div style="text-align:center"><strong>${nameUpper}</strong><br><span class="status-text" style="font-size:10px; opacity:0.7">${statusText}</span></div>`;
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
-            officerMarkers[uid].setTooltipContent(tooltipContent);
+            officerMarkers[uid].bindTooltip(tooltipHTML, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -12],
+                interactive: true,
+                className: 'custom-tooltip'
+            });
         } else {
             const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
-            marker.bindTooltip(tooltipContent, { permanent: true, direction: 'top', offset: [0, -12] });
+            marker.bindTooltip(tooltipHTML, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -12],
+                interactive: true,
+                className: 'custom-tooltip'
+            });
             officerClusterGroup.addLayer(marker);
             officerMarkers[uid] = marker;
         }
