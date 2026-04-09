@@ -12,7 +12,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
-        /* ... giữ nguyên style cũ ... */
+        /* ... giữ nguyên style ... */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
@@ -186,7 +186,25 @@
     let drawingLayers = {};
     let userDragging = false;
 
-    // Các hàm tiện ích
+    // Export các biến cần thiết cho các module (voice, events, ...)
+    window.db = db;
+    window.map = null; // sẽ gán sau khi init
+    window.myName = myName;
+    window.myUsername = myUsername;
+    window.userRole = userRole;
+    window.safeUserColors = safeUserColors;
+    window.allOfficers = allOfficers;
+    window.officerMarkers = officerMarkers;
+    window.officerClusterGroup = officerClusterGroup;
+    // Các hàm cần thiết
+    window.isValidVNCoordinate = isValidVNCoordinate;
+    window.haversine = haversine;
+    window.updateOfficerMarker = updateOfficerMarker;
+    window.removeOfficerMarker = removeOfficerMarker;
+    window.createOfficerIcon = createOfficerIcon;
+    window.getOfficerColorWithStatus = getOfficerColorWithStatus;
+
+    // Các hàm tiện ích (phải được định nghĩa trước khi export)
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -331,6 +349,10 @@
                 { enableHighAccuracy: true, timeout: 10000 }
             );
         }
+        // Gán lại window.map sau khi khởi tạo
+        window.map = map;
+        // Gán các biến khác cần thiết cho module voice
+        window.officerClusterGroup = officerClusterGroup;
     }
 
     // NoSleep (fix giữ sáng màn hình)
@@ -345,7 +367,6 @@
         }
     }
     
-    // chỉ cần chạm 1 lần là bật
     document.addEventListener("click", enableNoSleepOnce, { once: true });
     document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
@@ -377,7 +398,7 @@
         }
     });
 
-    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
+    // === GỬI VỊ TRÍ LÊN FIREBASE ===
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
             (position) => {
@@ -458,11 +479,14 @@
     });
 
     // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
-    <!-- ALERTS_JS -->
-    <!-- DRAW_JS -->
-    <!-- TRACKING_JS -->
-    <!-- EVENTS_JS -->
-    <!-- MAP_JS -->
+    // Import events.js (chứa voice logic) và các module khác
+    import "/static/js/events.js";
+    // Các module khác nếu có: alerts.js, draw.js, tracking.js, map.js
+    // Bạn có thể import tương tự, nhưng lưu ý thứ tự
+    import "/static/js/alerts.js";
+    import "/static/js/draw.js";
+    import "/static/js/tracking.js";
+    import "/static/js/map.js";
 
     // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
@@ -481,9 +505,6 @@
             if (navigator.vibrate) navigator.vibrate(100);
         }
     };
-
-    // ==================== XỬ LÝ VOICE (đã được thêm vào events.js, nhưng có thể đặt ở đây để chắc chắn) ====================
-    // (Phần này sẽ được đặt trong events.js, nhưng để tránh thiếu, ta cũng thêm ở đây nếu chưa có)
 </script>
 </body>
 </html>
