@@ -602,7 +602,7 @@ def main():
                         })
                         st.dataframe(cluster_df[['ID', 'Vĩ độ', 'Kinh độ', 'Số điểm', 'Bán kính (km)']])
 
-   with tab5:
+    with tab5:
         st.subheader("📊 Phân tích vùng tuần tra và sự cố")
         st.markdown("Dựa trên dữ liệu lịch sử di chuyển (tracks) và các vụ việc (incidents) trong khoảng thời gian gần đây.")
         
