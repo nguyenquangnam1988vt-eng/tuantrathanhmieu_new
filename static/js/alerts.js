@@ -43,11 +43,18 @@ onChildAdded(alertsRef, (data) => {
     if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
         playedAlerts.add(id);
         savePlayedAlerts();
-        console.log(`[Alerts] Playing alert sound and flying to ${alert.lat},${alert.lng}`);
+        console.log(`[Alerts] Playing alert sound, vibrating, and flying to ${alert.lat},${alert.lng}`);
+        
+        // Rung máy (nếu hỗ trợ)
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        
+        // Phát âm thanh
         if (audioActivated && alertSound) {
             alertSound.currentTime = 0;
             alertSound.play().catch(() => {});
         }
+        
+        // Bay đến điểm báo động (ưu tiên hơn follow me)
         if (!map._animatingZoom && !userDragging) {
             map.flyTo([alert.lat, alert.lng], 17, { animate: true, duration: 1.5 });
         }
