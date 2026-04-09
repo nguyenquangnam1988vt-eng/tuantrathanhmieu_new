@@ -10,6 +10,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def get_current_location(username):
+    """Lấy vị trí hiện tại của người dùng từ Firebase node officers"""
+    db = init_db()
+    officer = db.child("officers").child(username).get().val()
+    if officer and is_valid_coordinate(officer.get("lat"), officer.get("lng")):
+        return officer["lat"], officer["lng"]
+    return None, None
+
 def get_track_data(days_back=7):
     """
     Lấy dữ liệu track (lịch sử di chuyển) từ Firebase trong khoảng thời gian.
@@ -49,24 +57,32 @@ def get_track_data(days_back=7):
     logger.info(f"Loaded {len(df)} track points for analysis")
     return df
 
-def create_grid(lat_min=8, lat_max=24, lng_min=102, lng_max=110, step=0.05):
+def create_grid_local(center_lat, center_lng, radius_km=10, step_deg=0.02):
     """
-    Tạo lưới ô vuông (grid) với kích thước step (độ).
-    Mỗi ô được xác định bởi index (i, j).
+    Tạo lưới ô vuông xung quanh tâm (center_lat, center_lng) trong bán kính radius_km.
+    step_deg: kích thước mỗi ô (độ), mặc định 0.02° ≈ 2.2 km
     """
-    lats = np.arange(lat_min, lat_max, step)
-    lngs = np.arange(lng_min, lng_max, step)
+    radius_deg = radius_km / 111.0  # 1° ≈ 111 km
+    
+    lat_min = center_lat - radius_deg
+    lat_max = center_lat + radius_deg
+    lng_min = center_lng - radius_deg
+    lng_max = center_lng + radius_deg
+    
+    lats = np.arange(lat_min, lat_max, step_deg)
+    lngs = np.arange(lng_min, lng_max, step_deg)
+    
     grid = []
     for i, lat in enumerate(lats):
         for j, lng in enumerate(lngs):
             grid.append({
                 'i': i, 'j': j,
-                'lat_min': lat, 'lat_max': lat + step,
-                'lng_min': lng, 'lng_max': lng + step,
-                'center_lat': lat + step/2,
-                'center_lng': lng + step/2
+                'lat_min': lat, 'lat_max': lat + step_deg,
+                'lng_min': lng, 'lng_max': lng + step_deg,
+                'center_lat': lat + step_deg/2,
+                'center_lng': lng + step_deg/2
             })
-    logger.info(f"Created grid with {len(grid)} cells")
+    logger.info(f"Created local grid with {len(grid)} cells within {radius_km} km radius")
     return grid
 
 def assign_points_to_grid(df, grid):
