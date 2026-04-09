@@ -12,7 +12,6 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
-        /* ... giữ nguyên style cũ ... */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
@@ -51,7 +50,7 @@
         /* Nút khóa màn hình - góc phải dưới */
         #lockBtn {
             position: fixed;
-            bottom: 100px;
+            bottom: 150px;
             right: 20px;
             z-index: 10000;
             background: #1e293b;
@@ -91,8 +90,8 @@
         /* Nút Follow Me */
         #followBtn {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 150px;
+            left: 20px;
             z-index: 10001;
             background: #10b981;
             color: white;
@@ -223,7 +222,7 @@
         switch(status) {
             case "active": return "#22c55e";  // xanh
             case "slow": return "#eab308";    // vàng
-            default: return "#ef4444";        // đỏ
+            default: return "#9ca3af";        // xám cho mất tín hiệu
         }
     }
 
@@ -242,8 +241,9 @@
         const lastUpdate = officer.lastUpdate || 0;
         const status = getOfficerStatus(lastUpdate);
         const color = getOfficerColorWithStatus(uid, lastUpdate);
-        const statusText = status === "active" ? "🟢 Hoạt động" : (status === "slow" ? "🟡 Chậm" : "🔴 Mất tín hiệu");
-        const tooltipContent = `${officer.name || uid} (${statusText})`;
+        const statusText = status === "active" ? "🟢 Hoạt động" : (status === "slow" ? "🟡 Chậm" : "⚪ Mất tín hiệu");
+        // Tên viết hoa, xuống dòng, rồi trạng thái
+        const tooltipContent = `${(officer.name || uid).toUpperCase()}<br>${statusText}`;
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
