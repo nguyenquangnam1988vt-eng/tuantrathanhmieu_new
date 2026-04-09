@@ -613,14 +613,21 @@ def main():
             grid_step = st.number_input("Kích thước ô lưới (độ)", min_value=0.02, max_value=0.5, value=0.05, step=0.01, format="%.2f", key="grid_step")
             st.caption(f"≈ {grid_step * 111:.1f} km mỗi ô")
         
+        # Nút chạy phân tích
         if st.button("🔍 Chạy phân tích vùng tuần tra", type="primary"):
+            st.session_state.run_analysis = True
+            # Xóa kết quả cũ khi bấm nút mới (nếu muốn)
+            # st.session_state.pop("analysis_result", None)
+        
+        # Nếu đã có yêu cầu chạy phân tích
+        if st.session_state.get("run_analysis", False):
             with st.spinner("Đang tải dữ liệu track và incidents..."):
                 try:
                     # Lấy dữ liệu
                     df_tracks = get_track_data(days_back=days_analysis)
                     df_incidents = get_incident_data(days_back=days_analysis)
                     
-                    # Debug: hiển thị kích thước dữ liệu
+                    # Hiển thị số lượng để debug
                     st.info(f"📊 Dữ liệu: **{len(df_tracks)}** điểm track, **{len(df_incidents)}** vụ việc")
                     
                     if df_tracks.empty and df_incidents.empty:
@@ -630,6 +637,15 @@ def main():
                         grid = create_grid(step=grid_step)
                         analysis_df = analyze_patrol_coverage(df_tracks, df_incidents, grid, days_analysis)
                         
+                        # Lưu kết quả vào session_state để hiển thị
+                        st.session_state.analysis_result = {
+                            'analysis_df': analysis_df,
+                            'df_tracks': df_tracks,
+                            'df_incidents': df_incidents,
+                            'days': days_analysis,
+                            'grid_step': grid_step
+                        }
+                        
                         # Xác định tâm bản đồ động
                         if not df_tracks.empty:
                             center_lat = df_tracks['lat'].mean()
@@ -638,18 +654,18 @@ def main():
                             center_lat = df_incidents['lat'].mean()
                             center_lng = df_incidents['lng'].mean()
                         else:
-                            center_lat, center_lng = 16.047, 108.206  # trung tâm Việt Nam
+                            center_lat, center_lng = 16.047, 108.206
                         
                         # Bản đồ heatmap
                         st.subheader("🗺️ Bản đồ mật độ tuần tra và vụ việc")
-                        # Zoom phù hợp: nếu có dữ liệu, tính bound để zoom động, nếu không dùng zoom 13
                         m2 = folium.Map(location=[center_lat, center_lng], zoom_start=13)
                         
-                        # Thêm heatmap track nếu có
+                        # Thêm heatmap track nếu có dữ liệu
                         if not df_tracks.empty and len(df_tracks) > 0:
                             heat_track = [[row['lat'], row['lng']] for _, row in df_tracks.iterrows()]
                             HeatMap(heat_track, radius=10, blur=8, name="Mật độ tuần tra", gradient={0.2: 'blue', 0.6: 'lime', 1: 'green'}).add_to(m2)
-                        # Thêm heatmap incidents nếu có
+                        
+                        # Thêm heatmap incidents nếu có dữ liệu
                         if not df_incidents.empty and len(df_incidents) > 0:
                             heat_inc = [[row['lat'], row['lng']] for _, row in df_incidents.iterrows()]
                             HeatMap(heat_inc, radius=15, blur=10, name="Mật độ vụ việc", gradient={0.4: 'yellow', 0.7: 'orange', 1: 'red'}).add_to(m2)
@@ -691,6 +707,15 @@ def main():
                 except Exception as e:
                     st.error(f"❌ Lỗi khi phân tích: {e}")
                     logger.error(f"Analysis error: {e}")
+                    # Xóa trạng thái để không bị treo
+                    st.session_state.run_analysis = False
+            
+            # Nút để reset phân tích (tùy chọn)
+            if st.button("🗑️ Xóa kết quả phân tích"):
+                st.session_state.run_analysis = False
+                if "analysis_result" in st.session_state:
+                    del st.session_state.analysis_result
+                st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
