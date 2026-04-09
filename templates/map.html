@@ -127,24 +127,30 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
     import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
-    import "/static/js/main.js";
 
-    const firebaseConfig = {{ firebase_config }};
+    // Import các module JS tách biệt (phải có đường dẫn đúng)
+    import "/static/js/events.js";
+    import "/static/js/alerts.js";
+    import "/static/js/draw.js";
+    import "/static/js/tracking.js";
+    import "/static/js/map.js";
+
+    const firebaseConfig = {{ firebase_config | tojson }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const messaging = getMessaging(app);
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    let userRole = {{ user_role }};
-    let showTracks = {{ show_tracks }};
-    let stationaryOfficers = {{ stationary_officers }};
-    let userColors = {{ user_colors }};
-    let initialOfficers = {{ initial_officers }};
+    let userRole = {{ user_role | tojson }};
+    let showTracks = {{ show_tracks | tojson }};
+    let stationaryOfficers = {{ stationary_officers | tojson }};
+    let userColors = {{ user_colors | tojson }};
+    let initialOfficers = {{ initial_officers | tojson }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
+    // Hàm an toàn để xử lý object (phòng trường hợp biến bị null/boolean)
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
@@ -187,9 +193,9 @@
     let drawingLayers = {};
     let userDragging = false;
 
-    // Export các biến cần thiết cho các module (voice, events, ...)
+    // Xuất các biến cần thiết ra window để các module khác dùng
     window.db = db;
-    window.map = null; // sẽ gán sau khi init
+    window.map = null; // sẽ gán sau init
     window.myName = myName;
     window.myUsername = myUsername;
     window.userRole = userRole;
@@ -197,7 +203,6 @@
     window.allOfficers = allOfficers;
     window.officerMarkers = officerMarkers;
     window.officerClusterGroup = officerClusterGroup;
-    // Các hàm cần thiết
     window.isValidVNCoordinate = isValidVNCoordinate;
     window.haversine = haversine;
     window.updateOfficerMarker = updateOfficerMarker;
@@ -205,7 +210,7 @@
     window.createOfficerIcon = createOfficerIcon;
     window.getOfficerColorWithStatus = getOfficerColorWithStatus;
 
-    // Các hàm tiện ích (phải được định nghĩa trước khi export)
+    // Các hàm tiện ích (phải định nghĩa trước khi dùng)
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -350,15 +355,13 @@
                 { enableHighAccuracy: true, timeout: 10000 }
             );
         }
-        // Gán lại window.map sau khi khởi tạo
+        // Gán window.map sau khi khởi tạo
         window.map = map;
-        // Gán các biến khác cần thiết cho module voice
         window.officerClusterGroup = officerClusterGroup;
     }
 
-    // NoSleep (fix giữ sáng màn hình)
+    // NoSleep (giữ sáng màn hình)
     let noSleep = new NoSleep();
-    
     function enableNoSleepOnce() {
         try {
             noSleep.enable();
@@ -367,7 +370,6 @@
             console.warn("NoSleep failed:", e);
         }
     }
-    
     document.addEventListener("click", enableNoSleepOnce, { once: true });
     document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
@@ -390,6 +392,7 @@
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
+    // Khởi chạy map và các thành phần
     initMap();
     initAudio();
     document.addEventListener("click", () => {
@@ -399,7 +402,7 @@
         }
     });
 
-    // === GỬI VỊ TRÍ LÊN FIREBASE ===
+    // Gửi vị trí lên Firebase
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
             (position) => {
@@ -435,7 +438,7 @@
         }
     }
 
-    // Real-time listeners
+    // Real-time listeners cho officers
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -479,8 +482,6 @@
         }
     });
 
-    // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
-    // Import events.js (chứa voice logic) và các module khác
     // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
