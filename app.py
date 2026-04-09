@@ -41,7 +41,7 @@ from services.firebase_service import (
 from services.chat_service import get_messages, send_message, cleanup_old_messages
 from services.order_service import create_alert, accept_alert, find_nearest_officers
 from services.hotspot_service import get_incident_data, detect_hotspots, save_hotspot_log
-from services.analysis_service import get_track_data, create_grid, analyze_patrol_coverage
+from services.analysis_service import get_track_data, create_grid_local, analyze_patrol_coverage, get_current_location
 from utils.helpers import get_base64, is_valid_coordinate, upload_to_imgbb
 
 VN_TIMEZONE = timezone(timedelta(hours=7))
