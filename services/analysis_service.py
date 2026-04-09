@@ -6,6 +6,9 @@ from collections import defaultdict
 from services.firebase_service import init_db
 from services.hotspot_service import get_incident_data
 from utils.helpers import is_valid_coordinate
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_track_data(days_back=7):
     """
@@ -15,6 +18,7 @@ def get_track_data(days_back=7):
     db = init_db()
     tracks = db.child("tracks").get().val()
     if not tracks:
+        logger.warning("No track data found")
         return pd.DataFrame(columns=['lat', 'lng', 'userId', 'timestamp'])
     
     data = []
@@ -42,6 +46,7 @@ def get_track_data(days_back=7):
                     'timestamp': ts
                 })
     df = pd.DataFrame(data)
+    logger.info(f"Loaded {len(df)} track points for analysis")
     return df
 
 def create_grid(lat_min=8, lat_max=24, lng_min=102, lng_max=110, step=0.05):
@@ -61,6 +66,7 @@ def create_grid(lat_min=8, lat_max=24, lng_min=102, lng_max=110, step=0.05):
                 'center_lat': lat + step/2,
                 'center_lng': lng + step/2
             })
+    logger.info(f"Created grid with {len(grid)} cells")
     return grid
 
 def assign_points_to_grid(df, grid):
@@ -127,4 +133,7 @@ def analyze_patrol_coverage(df_tracks, df_incidents, grid, days_back=7):
             'risk_level': risk_level,
             'recommendation': recommendation
         })
-    return pd.DataFrame(result)
+    
+    df_result = pd.DataFrame(result)
+    logger.info(f"Analysis completed, found {len(df_result[df_result['patrol_status'] == '🔴 Bỏ trống'])} empty patrol zones")
+    return df_result
