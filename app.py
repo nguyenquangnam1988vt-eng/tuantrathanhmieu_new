@@ -41,6 +41,7 @@ from services.firebase_service import (
 from services.chat_service import get_messages, send_message, cleanup_old_messages
 from services.order_service import create_alert, accept_alert, find_nearest_officers
 from services.hotspot_service import get_incident_data, detect_hotspots, save_hotspot_log
+from services.analysis_service import get_track_data, create_grid, analyze_patrol_coverage
 from utils.helpers import get_base64, is_valid_coordinate, upload_to_imgbb
 
 VN_TIMEZONE = timezone(timedelta(hours=7))
@@ -49,7 +50,7 @@ def main():
     logger.info("Application started")
     st.set_page_config(page_title="Tuần tra cơ động", layout="wide")
 
-    # CSS
+    # CSS (giữ nguyên)
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -472,9 +473,9 @@ def main():
     map_html = map_html.replace("<!-- TRACKING_JS -->", tracking_js)
     map_html = map_html.replace("<!-- EVENTS_JS -->", events_js)
 
-    # ==================== HIỂN THỊ MAP, CHAT, LOG, HOTSPOT ====================
+    # ==================== HIỂN THỊ 5 TAB ====================
     st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-    tab1, tab2, tab3, tab4 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ", "📋 Nhật ký hệ thống", "🔥 Điểm nóng"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗺️ Bản đồ", "💬 Chat nội bộ", "📋 Nhật ký hệ thống", "🔥 Điểm nóng", "📊 Phân tích vùng tuần tra"])
 
     with tab1:
         st.components.v1.html(map_html, height=620)
@@ -600,6 +601,58 @@ def main():
                             'size': 'Số điểm', 'radius_km': 'Bán kính (km)'
                         })
                         st.dataframe(cluster_df[['ID', 'Vĩ độ', 'Kinh độ', 'Số điểm', 'Bán kính (km)']])
+
+    with tab5:
+        st.subheader("📊 Phân tích vùng tuần tra và sự cố")
+        st.markdown("Dựa trên dữ liệu lịch sử di chuyển (tracks) và các vụ việc (incidents) trong khoảng thời gian gần đây.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            days_analysis = st.number_input("Số ngày phân tích", min_value=1, max_value=30, value=7, step=1, key="analysis_days")
+        with col2:
+            grid_step = st.number_input("Kích thước ô lưới (độ)", min_value=0.02, max_value=0.5, value=0.05, step=0.01, format="%.2f", key="grid_step")
+        
+        if st.button("🔍 Chạy phân tích vùng tuần tra", type="primary"):
+            with st.spinner("Đang tải dữ liệu track và incidents..."):
+                df_tracks = get_track_data(days_back=days_analysis)
+                df_incidents = get_incident_data(days_back=days_analysis)
+                
+                if df_tracks.empty and df_incidents.empty:
+                    st.warning("Không có đủ dữ liệu track hoặc incident trong khoảng thời gian này.")
+                else:
+                    grid = create_grid(step=grid_step)
+                    analysis_df = analyze_patrol_coverage(df_tracks, df_incidents, grid, days_analysis)
+                    
+                    # Bản đồ kết hợp
+                    st.subheader("Bản đồ mật độ tuần tra và vụ việc")
+                    center_lat = 16.047
+                    center_lng = 108.206
+                    m2 = folium.Map(location=[center_lat, center_lng], zoom_start=6)
+                    
+                    if not df_tracks.empty:
+                        heat_track = [[row['lat'], row['lng']] for _, row in df_tracks.iterrows()]
+                        HeatMap(heat_track, radius=10, blur=8, name="Mật độ tuần tra", gradient={0.2: 'blue', 0.6: 'lime', 1: 'green'}).add_to(m2)
+                    if not df_incidents.empty:
+                        heat_inc = [[row['lat'], row['lng']] for _, row in df_incidents.iterrows()]
+                        HeatMap(heat_inc, radius=15, blur=10, name="Mật độ vụ việc", gradient={0.4: 'yellow', 0.7: 'orange', 1: 'red'}).add_to(m2)
+                    
+                    folium.LayerControl().add_to(m2)
+                    st_folium(m2, width=700, height=500)
+                    
+                    # Bảng các khu vực cần lưu ý
+                    st.subheader("Các khu vực cần tăng cường tuần tra")
+                    alert_zones = analysis_df[
+                        (analysis_df['patrol_status'].isin(['🔴 Bỏ trống', '🟡 Trung bình'])) & 
+                        (analysis_df['risk_level'].isin(['🔥 Cao', '⚠️ Trung bình']))
+                    ]
+                    if not alert_zones.empty:
+                        st.dataframe(alert_zones[['center_lat', 'center_lng', 'track_count', 'incident_count', 'patrol_status', 'risk_level', 'recommendation']])
+                    else:
+                        st.success("✅ Không phát hiện khu vực bỏ trống có rủi ro cao.")
+                    
+                    # Tải CSV
+                    csv = analysis_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Tải kết quả phân tích (CSV)", csv, f"patrol_analysis_{days_analysis}days.csv", "text/csv")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
