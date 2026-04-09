@@ -449,34 +449,52 @@
         }
     });
 
-    // === GỬI VỊ TRÍ LÊN FIREBASE VÀ FOLLOW ME ===
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                if (!isValidVNCoordinate(lat, lng)) return;
-                const data = {
-                    lat: lat,
-                    lng: lng,
-                    name: myName,
-                    lastUpdate: Date.now()
-                };
-                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
-                // Cập nhật vị trí của mình trong allOfficers để marker di chuyển
-                allOfficers[myUsername] = data;
-                updateOfficerMarker(myUsername, data);
-                // Follow Me
-                if (followMe && !userDragging && map) {
-                    map.setView([lat, lng]);
-                }
-            },
-            (error) => console.error("GPS error:", error),
-            { enableHighAccuracy: true, maximumAge: 10000, timeout: 200000 }
-        );
-    } else {
-        console.warn("Geolocation not supported");
-    }
+        // === GỬI VỊ TRÍ LÊN FIREBASE VÀ FOLLOW ME ===
+        let lastTrackLat = null;
+        let lastTrackLng = null;
+        
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    if (!isValidVNCoordinate(lat, lng)) return;
+                    
+                    // Ghi track nếu di chuyển đủ xa (>= 15 mét)
+                    if (lastTrackLat !== null && lastTrackLng !== null) {
+                        const dist = haversine(lastTrackLat, lastTrackLng, lat, lng);
+                        if (dist >= 15) {
+                            push(ref(db, 'tracks/' + myUsername + '/points'), {
+                                lat: lat,
+                                lng: lng,
+                                timestamp: serverTimestamp()
+                            }).catch(console.error);
+                        }
+                    }
+                    lastTrackLat = lat;
+                    lastTrackLng = lng;
+                    
+                    const data = {
+                        lat: lat,
+                        lng: lng,
+                        name: myName,
+                        lastUpdate: Date.now()
+                    };
+                    set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+                    // Cập nhật vị trí của mình trong allOfficers để marker di chuyển
+                    allOfficers[myUsername] = data;
+                    updateOfficerMarker(myUsername, data);
+                    // Follow Me
+                    if (followMe && !userDragging && map) {
+                        map.setView([lat, lng]);
+                    }
+                },
+                (error) => console.error("GPS error:", error),
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 200000 }
+            );
+        } else {
+            console.warn("Geolocation not supported");
+        }
 
     // === LOAD CACHE TRƯỚC ===
     const hasCache = loadOfficersFromCache();
