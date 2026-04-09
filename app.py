@@ -611,48 +611,86 @@ def main():
             days_analysis = st.number_input("Số ngày phân tích", min_value=1, max_value=30, value=7, step=1, key="analysis_days")
         with col2:
             grid_step = st.number_input("Kích thước ô lưới (độ)", min_value=0.02, max_value=0.5, value=0.05, step=0.01, format="%.2f", key="grid_step")
+            st.caption(f"≈ {grid_step * 111:.1f} km mỗi ô")
         
         if st.button("🔍 Chạy phân tích vùng tuần tra", type="primary"):
             with st.spinner("Đang tải dữ liệu track và incidents..."):
-                df_tracks = get_track_data(days_back=days_analysis)
-                df_incidents = get_incident_data(days_back=days_analysis)
-                
-                if df_tracks.empty and df_incidents.empty:
-                    st.warning("Không có đủ dữ liệu track hoặc incident trong khoảng thời gian này.")
-                else:
-                    grid = create_grid(step=grid_step)
-                    analysis_df = analyze_patrol_coverage(df_tracks, df_incidents, grid, days_analysis)
+                try:
+                    # Lấy dữ liệu
+                    df_tracks = get_track_data(days_back=days_analysis)
+                    df_incidents = get_incident_data(days_back=days_analysis)
                     
-                    # Bản đồ kết hợp
-                    st.subheader("Bản đồ mật độ tuần tra và vụ việc")
-                    center_lat = 16.047
-                    center_lng = 108.206
-                    m2 = folium.Map(location=[center_lat, center_lng], zoom_start=6)
+                    # Debug: hiển thị kích thước dữ liệu
+                    st.info(f"📊 Dữ liệu: **{len(df_tracks)}** điểm track, **{len(df_incidents)}** vụ việc")
                     
-                    if not df_tracks.empty:
-                        heat_track = [[row['lat'], row['lng']] for _, row in df_tracks.iterrows()]
-                        HeatMap(heat_track, radius=10, blur=8, name="Mật độ tuần tra", gradient={0.2: 'blue', 0.6: 'lime', 1: 'green'}).add_to(m2)
-                    if not df_incidents.empty:
-                        heat_inc = [[row['lat'], row['lng']] for _, row in df_incidents.iterrows()]
-                        HeatMap(heat_inc, radius=15, blur=10, name="Mật độ vụ việc", gradient={0.4: 'yellow', 0.7: 'orange', 1: 'red'}).add_to(m2)
-                    
-                    folium.LayerControl().add_to(m2)
-                    st_folium(m2, width=700, height=500)
-                    
-                    # Bảng các khu vực cần lưu ý
-                    st.subheader("Các khu vực cần tăng cường tuần tra")
-                    alert_zones = analysis_df[
-                        (analysis_df['patrol_status'].isin(['🔴 Bỏ trống', '🟡 Trung bình'])) & 
-                        (analysis_df['risk_level'].isin(['🔥 Cao', '⚠️ Trung bình']))
-                    ]
-                    if not alert_zones.empty:
-                        st.dataframe(alert_zones[['center_lat', 'center_lng', 'track_count', 'incident_count', 'patrol_status', 'risk_level', 'recommendation']])
+                    if df_tracks.empty and df_incidents.empty:
+                        st.warning("Không có dữ liệu track hoặc incident trong khoảng thời gian này.")
                     else:
-                        st.success("✅ Không phát hiện khu vực bỏ trống có rủi ro cao.")
-                    
-                    # Tải CSV
-                    csv = analysis_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Tải kết quả phân tích (CSV)", csv, f"patrol_analysis_{days_analysis}days.csv", "text/csv")
+                        # Tạo lưới và phân tích
+                        grid = create_grid(step=grid_step)
+                        analysis_df = analyze_patrol_coverage(df_tracks, df_incidents, grid, days_analysis)
+                        
+                        # Xác định tâm bản đồ động
+                        if not df_tracks.empty:
+                            center_lat = df_tracks['lat'].mean()
+                            center_lng = df_tracks['lng'].mean()
+                        elif not df_incidents.empty:
+                            center_lat = df_incidents['lat'].mean()
+                            center_lng = df_incidents['lng'].mean()
+                        else:
+                            center_lat, center_lng = 16.047, 108.206  # trung tâm Việt Nam
+                        
+                        # Bản đồ heatmap
+                        st.subheader("🗺️ Bản đồ mật độ tuần tra và vụ việc")
+                        # Zoom phù hợp: nếu có dữ liệu, tính bound để zoom động, nếu không dùng zoom 13
+                        m2 = folium.Map(location=[center_lat, center_lng], zoom_start=13)
+                        
+                        # Thêm heatmap track nếu có
+                        if not df_tracks.empty and len(df_tracks) > 0:
+                            heat_track = [[row['lat'], row['lng']] for _, row in df_tracks.iterrows()]
+                            HeatMap(heat_track, radius=10, blur=8, name="Mật độ tuần tra", gradient={0.2: 'blue', 0.6: 'lime', 1: 'green'}).add_to(m2)
+                        # Thêm heatmap incidents nếu có
+                        if not df_incidents.empty and len(df_incidents) > 0:
+                            heat_inc = [[row['lat'], row['lng']] for _, row in df_incidents.iterrows()]
+                            HeatMap(heat_inc, radius=15, blur=10, name="Mật độ vụ việc", gradient={0.4: 'yellow', 0.7: 'orange', 1: 'red'}).add_to(m2)
+                        
+                        folium.LayerControl().add_to(m2)
+                        st_folium(m2, width=700, height=500, key="map_analysis")
+                        
+                        # Thống kê tổng quan
+                        st.subheader("📈 Thống kê tổng quan")
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            st.metric("Tổng số ô lưới", len(analysis_df))
+                        with col_b:
+                            empty_zones = len(analysis_df[analysis_df['patrol_status'] == '🔴 Bỏ trống'])
+                            st.metric("Số ô bỏ trống", empty_zones)
+                        with col_c:
+                            high_risk_zones = len(analysis_df[analysis_df['risk_level'] == '🔥 Cao'])
+                            st.metric("Số ô nguy cơ cao", high_risk_zones)
+                        
+                        # Bảng các khu vực cần lưu ý
+                        st.subheader("⚠️ Các khu vực cần tăng cường tuần tra")
+                        alert_zones = analysis_df[
+                            (analysis_df['patrol_status'].isin(['🔴 Bỏ trống', '🟡 Trung bình'])) & 
+                            (analysis_df['risk_level'].isin(['🔥 Cao', '⚠️ Trung bình']))
+                        ]
+                        if not alert_zones.empty:
+                            st.dataframe(alert_zones[['center_lat', 'center_lng', 'track_count', 'incident_count', 'patrol_status', 'risk_level', 'recommendation']])
+                        else:
+                            st.success("✅ Không phát hiện khu vực bỏ trống có rủi ro cao.")
+                        
+                        # Hiển thị toàn bộ bảng phân tích
+                        with st.expander("📋 Xem toàn bộ phân tích các ô lưới"):
+                            st.dataframe(analysis_df)
+                        
+                        # Tải CSV
+                        csv = analysis_df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Tải kết quả phân tích (CSV)", csv, f"patrol_analysis_{days_analysis}days.csv", "text/csv")
+                        
+                except Exception as e:
+                    st.error(f"❌ Lỗi khi phân tích: {e}")
+                    logger.error(f"Analysis error: {e}")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
