@@ -480,13 +480,11 @@
 
     // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
     // Import events.js (chứa voice logic) và các module khác
-    import "/static/js/events.js";
-    // Các module khác nếu có: alerts.js, draw.js, tracking.js, map.js
-    // Bạn có thể import tương tự, nhưng lưu ý thứ tự
-    import "/static/js/alerts.js";
-    import "/static/js/draw.js";
-    import "/static/js/tracking.js";
-    import "/static/js/map.js";
+    import "./static/js/events.js";
+    import "./static/js/alerts.js";
+    import "./static/js/draw.js";
+    import "./static/js/tracking.js";
+    import "./static/js/map.js";
 
     // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
