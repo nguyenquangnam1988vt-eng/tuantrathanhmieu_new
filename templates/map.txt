@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-arrowheads@1.2.0/dist/leaflet-arrowheads.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-arrowheads@1.2.0/dist/leaflet-arrowheads.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
+    <style>
+        /* ... giữ nguyên style ... */
+        #map { height: 600px; width: 100%; }
+        .leaflet-container { will-change: transform; }
+        .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
+        .alert-marker { width: 24px; height: 24px; background: red; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px red; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
+        .incident-icon { background: #ffaa00; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; font-size: 18px; border: 2px solid white; }
+        .selection-info { background: white; padding: 8px 15px; border-radius: 8px; border: 2px solid #ff8800; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .cancel-btn { background: #ff4444; color: white; border: none; border-radius: 5px; padding: 5px 12px; margin-left: 10px; cursor: pointer; font-size: 14px; }
+        .leaflet-marker-icon { transition: transform 0.2s ease; }
+        .leaflet-marker-icon:hover { transform: scale(1.3); }
+        * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+        .custom-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 2000;
+            width: 280px;
+            padding: 16px;
+            font-family: sans-serif;
+        }
+        .custom-dialog h4 { margin-top: 0; margin-bottom: 12px; }
+        .custom-dialog input, .custom-dialog select { width: 100%; padding: 8px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; }
+        .custom-dialog button { padding: 8px 12px; margin-right: 8px; border: none; border-radius: 6px; cursor: pointer; }
+        .dialog-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1999; }
+        .delete-btn { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px; margin-top: 5px; }
+        .clear-orders-btn { position: absolute; top: 10px; right: 10px; background: #ff8800; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; z-index: 1000; font-size: 14px; font-weight: bold; }
+        .drawing-toolbar button { cursor: pointer; border: none; border-radius: 4px; font-size: 14px; margin: 2px; padding: 4px 8px; }
+        .drawing-toolbar button:hover { opacity: 0.8; }
+        .drawing-info { background: white; padding: 5px 10px; border-radius: 8px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
+
+        /* Nút khóa màn hình - góc phải dưới */
+        #lockBtn {
+            position: fixed;
+            bottom: 100px;
+            right: 20px;
+            z-index: 10000;
+            background: #1e293b;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 10px 16px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: 0.2s;
+        }
+        #lockBtn:active {
+            transform: scale(0.96);
+        }
+        #lockOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            font-family: sans-serif;
+        }
+        #lockOverlay div {
+            background: rgba(0,0,0,0.6);
+            padding: 20px 30px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- Nút khóa màn hình và lớp phủ -->
+<button id="lockBtn">🔒 Khóa</button>
+<div id="lockOverlay">
+    <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
+
+    const firebaseConfig = {{ firebase_config }};
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const messaging = getMessaging(app);
+
+    const myUsername = "{{ username }}";
+    const myName = "{{ name }}";
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
+    const alertSoundBase64 = "{{ alert_sound_base64 }}";
+    const fcmVapidKey = "{{ fcm_vapid_key }}";
+
+    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
+    function safeObject(v) {
+        return (typeof v === "object" && v !== null) ? v : {};
+    }
+
+    const safeShowTracks = safeObject(showTracks);
+    const safeInitialOfficers = safeObject(initialOfficers);
+    const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
+    const safeUserColors = safeObject(userColors);
+    if (typeof userRole !== 'string') userRole = 'officer';
+
+    // Biến toàn cục
+    let map = null;
+    let officerClusterGroup = null;
+    let allOfficers = {};
+    let officerMarkers = {};
+    let alertMarkers = {};
+    let alertTimeouts = {};
+    let pointMarkers = {};
+    let incidentMarkers = {};
+    let trackPolylines = {};
+    let activeTrackListeners = {};
+    let moveOrderLines = {};
+    let zoomedToMe = false;
+    let selectionMode = false;
+    let selectedOfficerId = null;
+    let selectedOfficerName = null;
+    let tempInfoControl = null;
+    let hasSelected = false;
+    let holdTimer = null;
+    let alertSound = null;
+    let audioActivated = false;
+    let drawingMode = false;
+    let tempPoints = [];
+    let tempPolyline = null;
+    let drawingColor = '#ff0000';
+    let drawingWeight = 3;
+    let arrowMode = false;
+    let arrowStart = null;
+    let arrowTempLine = null;
+    let drawingLayers = {};
+    let userDragging = false;
+
+    // Các hàm tiện ích
+    function isValidVNCoordinate(lat, lng) {
+        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+        if (lat === 0 && lng === 0) return false;
+        if (lat < 8 || lat > 24 || lng < 102 || lng > 110) return false;
+        return true;
+    }
+
+    function haversine(lat1, lng1, lat2, lng2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2 - lat1) * Math.PI/180;
+        const Δλ = (lng2 - lng1) * Math.PI/180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    function getBearing(lat1, lng1, lat2, lng2) {
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const λ1 = lng1 * Math.PI/180;
+        const λ2 = lng2 * Math.PI/180;
+        const y = Math.sin(λ2-λ1) * Math.cos(φ2);
+        const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+        return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
+    }
+
+    function initAudio() {
+        if (alertSound) return;
+        alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
+        alertSound.preload = "auto";
+        alertSound.loop = false;
+    }
+
+    function stopAlertSound() {
+        if (alertSound && !alertSound.paused) {
+            alertSound.pause();
+            alertSound.currentTime = 0;
+        }
+    }
+
+    function removeAlertMarker(alertId) {
+        if (alertMarkers[alertId]) {
+            map.removeLayer(alertMarkers[alertId]);
+            delete alertMarkers[alertId];
+        }
+        if (alertTimeouts[alertId]) {
+            clearTimeout(alertTimeouts[alertId]);
+            delete alertTimeouts[alertId];
+        }
+        if (Object.keys(alertMarkers).length === 0) stopAlertSound();
+    }
+
+    function createOfficerIcon(color) {
+        return L.divIcon({
+            className: '',
+            html: `<div style="background:${color}; width:22px; height:22px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px ${color};"></div>`,
+            iconSize: [22, 22],
+            popupAnchor: [0, -12]
+        });
+    }
+
+    function getOfficerColorWithStatus(uid, lastUpdate) {
+        if (uid === myUsername) return safeUserColors[uid] || '#0066cc';
+        const now = Date.now();
+        const diff = now - lastUpdate;
+        if (diff > 5 * 60 * 1000 && diff < 20 * 60 * 1000) {
+            return '#9ca3af';
+        }
+        return safeUserColors[uid] || '#0066cc';
+    }
+
+    function updateOfficerMarker(uid, officer) {
+        if (!map || !officerClusterGroup) return;
+        const latlng = [officer.lat, officer.lng];
+        const lastUpdate = officer.lastUpdate || 0;
+        const color = getOfficerColorWithStatus(uid, lastUpdate);
+        if (officerMarkers[uid]) {
+            officerMarkers[uid].setLatLng(latlng);
+            officerMarkers[uid].setIcon(createOfficerIcon(color));
+            officerMarkers[uid].setTooltipContent(officer.name || uid);
+        } else {
+            const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
+            marker.bindTooltip(officer.name || uid, { permanent: true, direction: 'top', offset: [0, -12] });
+            officerClusterGroup.addLayer(marker);
+            officerMarkers[uid] = marker;
+        }
+    }
+
+    function removeOfficerMarker(uid) {
+        if (officerMarkers[uid]) {
+            officerClusterGroup.removeLayer(officerMarkers[uid]);
+            delete officerMarkers[uid];
+        }
+    }
+
+    function initMap() {
+        const savedCenter = sessionStorage.getItem('mapCenter');
+        const savedZoom = sessionStorage.getItem('mapZoom');
+        if (savedCenter && savedZoom) {
+            map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
+                .setView(JSON.parse(savedCenter), parseInt(savedZoom));
+        } else {
+            map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
+                .setView([16.047079, 108.206230], 6);
+        }
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            subdomains: 'abcd',
+            maxZoom: 20,
+            updateWhenZooming: false
+        }).addTo(map);
+        officerClusterGroup = L.markerClusterGroup({
+            chunkedLoading: true,
+            maxClusterRadius: 80,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        map.addLayer(officerClusterGroup);
+        map.on('moveend', () => {
+            const center = map.getCenter();
+            sessionStorage.setItem('mapCenter', JSON.stringify([center.lat, center.lng]));
+            sessionStorage.setItem('mapZoom', map.getZoom());
+        });
+        map.on('dragstart', () => userDragging = true);
+        map.on('dragend', () => userDragging = false);
+        map.on('zoomstart', () => userDragging = true);
+        map.on('zoomend', () => userDragging = false);
+        
+        if (navigator.geolocation && !sessionStorage.getItem('zoomedToMe')) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude: lat, longitude: lng } = position.coords;
+                    if (isValidVNCoordinate(lat, lng)) {
+                        map.setView([lat, lng], 16);
+                        sessionStorage.setItem('zoomedToMe', 'true');
+                    }
+                },
+                (error) => console.warn("GPS fallback error:", error),
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+    }
+
+    // NoSleep (fix giữ sáng màn hình)
+    let noSleep = new NoSleep();
+    
+    function enableNoSleepOnce() {
+        try {
+            noSleep.enable();
+            console.log("NoSleep enabled");
+        } catch (e) {
+            console.warn("NoSleep failed:", e);
+        }
+    }
+    
+    // chỉ cần chạm 1 lần là bật
+    document.addEventListener("click", enableNoSleepOnce, { once: true });
+    document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
+
+    // FCM foreground only
+    if (fcmVapidKey !== "") {
+        onMessage(messaging, payload => {
+            if (Notification.permission === 'granted') {
+                new Notification(payload.notification.title, { body: payload.notification.body });
+            } else {
+                console.log("Notification permission not granted");
+            }
+        });
+        const requestNotificationPermission = () => {
+            if (Notification.permission !== 'granted') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') console.log("Notification permission granted");
+                });
+            }
+        };
+        document.body.addEventListener('click', requestNotificationPermission, { once: true });
+    }
+
+    initMap();
+    initAudio();
+    document.addEventListener("click", () => {
+        if (!audioActivated && alertSound) {
+            alertSound.load();
+            audioActivated = true;
+        }
+    });
+
+    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                if (!isValidVNCoordinate(lat, lng)) return;
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now()
+                };
+                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+            },
+            (error) => {
+                console.error("GPS error:", error);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 10000,
+                timeout: 200000
+            }
+        );
+    } else {
+        console.warn("Geolocation not supported");
+    }
+
+    // Khởi tạo officers từ safeInitialOfficers
+    for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            allOfficers[uid] = officer;
+            updateOfficerMarker(uid, officer);
+        }
+    }
+
+    // Real-time listeners
+    const officersRef = ref(db, 'officers');
+    onDisconnect(ref(db, 'officers/' + myUsername)).remove();
+
+    onChildAdded(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        const officer = snapshot.val();
+        if (!officer) return;
+        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+        allOfficers[id] = officer;
+        updateOfficerMarker(id, officer);
+        if (id === myUsername && !sessionStorage.getItem('zoomedToMe')) {
+            map.setView([officer.lat, officer.lng], 16);
+            sessionStorage.setItem('zoomedToMe', 'true');
+        }
+    });
+
+    onChildChanged(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        const officer = snapshot.val();
+        if (!officer) return;
+        if (typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+        if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
+        allOfficers[id] = officer;
+        updateOfficerMarker(id, officer);
+    });
+
+    onChildRemoved(officersRef, (snapshot) => {
+        const id = snapshot.key;
+        delete allOfficers[id];
+        removeOfficerMarker(id);
+    });
+
+    // Stationary officers
+    safeStationaryOfficers.forEach(officer => {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            L.circleMarker([officer.lat, officer.lng], {
+                radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2,
+                renderer: L.canvas()
+            }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
+        }
+    });
+
+    // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
+    <!-- ALERTS_JS -->
+    <!-- DRAW_JS -->
+    <!-- TRACKING_JS -->
+    <!-- EVENTS_JS -->
+    <!-- MAP_JS -->
+
+    // ==================== NÚT KHÓA MÀN HÌNH ====================
+    const lockBtn = document.getElementById("lockBtn");
+    const lockOverlay = document.getElementById("lockOverlay");
+    let isLocked = false;
+
+    lockBtn.onclick = () => {
+        isLocked = !isLocked;
+        if (isLocked) {
+            lockOverlay.style.display = "flex";
+            lockBtn.textContent = "🔓 Mở khóa";
+            if (navigator.vibrate) navigator.vibrate(100);
+        } else {
+            lockOverlay.style.display = "none";
+            lockBtn.textContent = "🔒 Khóa";
+            if (navigator.vibrate) navigator.vibrate(100);
+        }
+    };
+</script>
+</body>
+</html>
