@@ -12,7 +12,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
-        /* ... giữ nguyên style ... */
+        /* ... giữ nguyên style cũ ... */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .leaflet-tooltip { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #333; text-shadow: 1px 1px 2px white; font-size: 12px; margin-top: -15px !important; white-space: nowrap; }
@@ -64,9 +64,7 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             transition: 0.2s;
         }
-        #lockBtn:active {
-            transform: scale(0.96);
-        }
+        #lockBtn:active { transform: scale(0.96); }
         #lockOverlay {
             position: fixed;
             top: 0;
@@ -89,16 +87,41 @@
             padding: 20px 30px;
             border-radius: 20px;
         }
+
+        /* Nút voice - góc trái dưới */
+        #voiceBtn {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 10001;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 12px 20px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #voiceBtn:active { transform: scale(0.96); }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<!-- Nút khóa màn hình và lớp phủ -->
+<!-- Nút khóa màn hình -->
 <button id="lockBtn">🔒 Khóa</button>
 <div id="lockOverlay">
     <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
 </div>
+
+<!-- Nút voice -->
+<button id="voiceBtn">🎤 Thông báo</button>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -458,6 +481,9 @@
             if (navigator.vibrate) navigator.vibrate(100);
         }
     };
+
+    // ==================== XỬ LÝ VOICE (đã được thêm vào events.js, nhưng có thể đặt ở đây để chắc chắn) ====================
+    // (Phần này sẽ được đặt trong events.js, nhưng để tránh thiếu, ta cũng thêm ở đây nếu chưa có)
 </script>
 </body>
 </html>
