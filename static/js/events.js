@@ -470,7 +470,11 @@ function sendVoiceToFirebase(text) {
 }
 
 // Lắng nghe tin nhắn voice từ Firebase
-const voiceMessagesRef = ref(db, 'voice_messages');
+const voiceMessagesRef = query(
+    ref(db, 'voice_messages'),
+    limitToLast(20)
+);
+
 onChildAdded(voiceMessagesRef, (snapshot) => {
     const data = snapshot.val();
     if (!data) return;
