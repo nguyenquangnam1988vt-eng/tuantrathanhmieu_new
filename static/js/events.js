@@ -368,3 +368,160 @@ if (userRole === 'commander' || userRole === 'admin') {
         }, 200);
     }
 }
+// ==================== VOICE NOTIFICATION SYSTEM ====================
+// ID client để tránh tự đọc lại tin nhắn của mình
+const clientId = Math.random().toString(36).substring(2);
+
+// Khởi tạo Speech Recognition
+let isListening = false;
+let recognition = null;
+
+// Kiểm tra trình duyệt hỗ trợ
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = "vi-VN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        isListening = true;
+        const voiceBtn = document.getElementById("voiceBtn");
+        if (voiceBtn) {
+            voiceBtn.style.background = "#ef4444";
+            voiceBtn.innerHTML = "🎙️ Đang nghe...";
+        }
+        console.log("🎤 Đang nghe...");
+    };
+
+    recognition.onend = () => {
+        isListening = false;
+        const voiceBtn = document.getElementById("voiceBtn");
+        if (voiceBtn) {
+            voiceBtn.style.background = "#4f46e5";
+            voiceBtn.innerHTML = "🎤 Thông báo";
+        }
+        console.log("🎤 Kết thúc nghe");
+    };
+
+    recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        console.log("Bạn nói:", text);
+        if (text && text.trim()) {
+            sendVoiceToFirebase(text.trim());
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        isListening = false;
+        const voiceBtn = document.getElementById("voiceBtn");
+        if (voiceBtn) {
+            voiceBtn.style.background = "#4f46e5";
+            voiceBtn.innerHTML = "🎤 Thông báo";
+        }
+        if (event.error === 'not-allowed') {
+            console.warn("Không được phép truy cập microphone");
+        }
+    };
+} else {
+    console.warn("Trình duyệt không hỗ trợ Web Speech API");
+    // Vô hiệu hóa nút voice nếu không hỗ trợ
+    const voiceBtn = document.getElementById("voiceBtn");
+    if (voiceBtn) {
+        voiceBtn.disabled = true;
+        voiceBtn.style.opacity = "0.5";
+        voiceBtn.title = "Trình duyệt không hỗ trợ nhập liệu bằng giọng nói";
+    }
+}
+
+// Gắn sự kiện cho nút voice (sau khi DOM load)
+document.addEventListener('DOMContentLoaded', () => {
+    const voiceBtn = document.getElementById("voiceBtn");
+    if (voiceBtn && recognition) {
+        voiceBtn.onclick = () => {
+            if (isListening) return;
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Cannot start recognition:", e);
+            }
+        };
+    }
+});
+
+// Gửi tin nhắn voice lên Firebase
+function sendVoiceToFirebase(text) {
+    if (typeof db === 'undefined' || !db) {
+        console.error("Firebase not initialized");
+        return;
+    }
+    const voiceRef = ref(db, 'voice_messages');
+    push(voiceRef, {
+        message: text,
+        time: Date.now(),
+        sender: clientId,
+        userName: myName || "unknown",
+        timestamp: Date.now()
+    }).catch(err => console.error("Send voice error:", err));
+}
+
+// Lắng nghe tin nhắn voice từ Firebase
+const voiceMessagesRef = ref(db, 'voice_messages');
+onChildAdded(voiceMessagesRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+    // Bỏ qua tin nhắn của chính mình
+    if (data.sender === clientId) return;
+    handleVoiceMessage(data.message);
+});
+
+// Xử lý tin nhắn voice: hiển thị cảnh báo và đọc
+function handleVoiceMessage(text) {
+    // Hiển thị thông báo trên bản đồ (dùng alert nếu có function, hoặc tạo marker tạm)
+    // Nếu có function showAlert từ module khác, gọi nó; nếu không thì tạo popup
+    if (typeof showAlert === 'function') {
+        showAlert("📢 " + text);
+    } else {
+        console.log("📢 Voice message:", text);
+        // Tạo popup tạm thời trên map nếu map đã sẵn sàng
+        if (map) {
+            const center = map.getCenter();
+            L.popup()
+                .setLatLng(center)
+                .setContent(`📢 <b>Thông báo thoại:</b><br>${text}`)
+                .openOn(map);
+            setTimeout(() => map.closePopup(), 5000);
+        }
+    }
+    
+    // Đọc to tin nhắn
+    speak(text);
+}
+
+// Hàm đọc text
+function speak(text) {
+    if (!window.speechSynthesis) {
+        console.warn("Speech synthesis not supported");
+        return;
+    }
+    // Hủy bất kỳ luồng đọc đang diễn ra
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "vi-VN";
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    
+    window.speechSynthesis.speak(utterance);
+}
+
+// Kích hoạt âm thanh sau cú click đầu tiên (chính sách trình duyệt)
+document.addEventListener("click", () => {
+    if (window.speechSynthesis) {
+        // Đọc một chuỗi rỗng để "đánh thức" speech synthesis
+        const silent = new SpeechSynthesisUtterance("");
+        window.speechSynthesis.speak(silent);
+    }
+}, { once: true });
