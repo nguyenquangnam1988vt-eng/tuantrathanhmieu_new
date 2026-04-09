@@ -1,3 +1,4 @@
+import { ref, push, onChildAdded, query, limitToLast } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 console.log("[Events] Initializing events module");
 
 // ==================== MARKERS (điểm đánh dấu) ====================
@@ -368,6 +369,7 @@ if (userRole === 'commander' || userRole === 'admin') {
         }, 200);
     }
 }
+
 // ==================== VOICE NOTIFICATION SYSTEM ====================
 // ID client để tránh tự đọc lại tin nhắn của mình
 const clientId = Math.random().toString(36).substring(2);
@@ -426,7 +428,6 @@ if (SpeechRecognition) {
     };
 } else {
     console.warn("Trình duyệt không hỗ trợ Web Speech API");
-    // Vô hiệu hóa nút voice nếu không hỗ trợ
     const voiceBtn = document.getElementById("voiceBtn");
     if (voiceBtn) {
         voiceBtn.disabled = true;
@@ -435,10 +436,12 @@ if (SpeechRecognition) {
     }
 }
 
-// Gắn sự kiện cho nút voice (sau khi DOM load)
-document.addEventListener('DOMContentLoaded', () => {
+// Gắn sự kiện cho nút voice (sử dụng setTimeout để đảm bảo DOM đã sẵn sàng)
+setTimeout(() => {
     const voiceBtn = document.getElementById("voiceBtn");
     if (voiceBtn && recognition) {
+        // Xóa sự kiện cũ nếu có
+        voiceBtn.onclick = null;
         voiceBtn.onclick = () => {
             if (isListening) return;
             try {
@@ -448,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
-});
+}, 100);
 
 // Gửi tin nhắn voice lên Firebase
 function sendVoiceToFirebase(text) {
@@ -478,23 +481,15 @@ onChildAdded(voiceMessagesRef, (snapshot) => {
 
 // Xử lý tin nhắn voice: hiển thị cảnh báo và đọc
 function handleVoiceMessage(text) {
-    // Hiển thị thông báo trên bản đồ (dùng alert nếu có function, hoặc tạo marker tạm)
-    // Nếu có function showAlert từ module khác, gọi nó; nếu không thì tạo popup
-    if (typeof showAlert === 'function') {
-        showAlert("📢 " + text);
-    } else {
-        console.log("📢 Voice message:", text);
-        // Tạo popup tạm thời trên map nếu map đã sẵn sàng
-        if (map) {
-            const center = map.getCenter();
-            L.popup()
-                .setLatLng(center)
-                .setContent(`📢 <b>Thông báo thoại:</b><br>${text}`)
-                .openOn(map);
-            setTimeout(() => map.closePopup(), 5000);
-        }
+    // Hiển thị thông báo trên bản đồ (popup)
+    if (map) {
+        const center = map.getCenter();
+        L.popup()
+            .setLatLng(center)
+            .setContent(`📢 <b>Thông báo thoại:</b><br>${text}`)
+            .openOn(map);
+        setTimeout(() => map.closePopup(), 5000);
     }
-    
     // Đọc to tin nhắn
     speak(text);
 }
@@ -520,7 +515,6 @@ function speak(text) {
 // Kích hoạt âm thanh sau cú click đầu tiên (chính sách trình duyệt)
 document.addEventListener("click", () => {
     if (window.speechSynthesis) {
-        // Đọc một chuỗi rỗng để "đánh thức" speech synthesis
         const silent = new SpeechSynthesisUtterance("");
         window.speechSynthesis.speak(silent);
     }
