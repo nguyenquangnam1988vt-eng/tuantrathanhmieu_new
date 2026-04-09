@@ -64,7 +64,9 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             transition: 0.2s;
         }
-        #lockBtn:active { transform: scale(0.96); }
+        #lockBtn:active {
+            transform: scale(0.96);
+        }
         #lockOverlay {
             position: fixed;
             top: 0;
@@ -87,70 +89,38 @@
             padding: 20px 30px;
             border-radius: 20px;
         }
-
-        /* Nút voice - góc trái dưới */
-        #voiceBtn {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            z-index: 10001;
-            background: #4f46e5;
-            color: white;
-            border: none;
-            border-radius: 50px;
-            padding: 12px 20px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            transition: all 0.2s ease;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        #voiceBtn:active { transform: scale(0.96); }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<!-- Nút khóa màn hình -->
+<!-- Nút khóa màn hình và lớp phủ -->
 <button id="lockBtn">🔒 Khóa</button>
 <div id="lockOverlay">
     <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
 </div>
-
-<!-- Nút voice -->
-<button id="voiceBtn">🎤 Thông báo</button>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
     import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // Import các module JS tách biệt (phải có đường dẫn đúng)
-    import "/static/js/events.js";
-    import "/static/js/alerts.js";
-    import "/static/js/draw.js";
-    import "/static/js/tracking.js";
-    import "/static/js/map.js";
-
-    const firebaseConfig = {{ firebase_config | tojson }};
+    const firebaseConfig = {{ firebase_config }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const messaging = getMessaging(app);
 
     const myUsername = "{{ username }}";
     const myName = "{{ name }}";
-    let userRole = {{ user_role | tojson }};
-    let showTracks = {{ show_tracks | tojson }};
-    let stationaryOfficers = {{ stationary_officers | tojson }};
-    let userColors = {{ user_colors | tojson }};
-    let initialOfficers = {{ initial_officers | tojson }};
+    let userRole = {{ user_role }};
+    let showTracks = {{ show_tracks }};
+    let stationaryOfficers = {{ stationary_officers }};
+    let userColors = {{ user_colors }};
+    let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // Hàm an toàn để xử lý object (phòng trường hợp biến bị null/boolean)
+    // Hàm an toàn để xử lý object từ Python (có thể là boolean true/false)
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
@@ -193,24 +163,7 @@
     let drawingLayers = {};
     let userDragging = false;
 
-    // Xuất các biến cần thiết ra window để các module khác dùng
-    window.db = db;
-    window.map = null; // sẽ gán sau init
-    window.myName = myName;
-    window.myUsername = myUsername;
-    window.userRole = userRole;
-    window.safeUserColors = safeUserColors;
-    window.allOfficers = allOfficers;
-    window.officerMarkers = officerMarkers;
-    window.officerClusterGroup = officerClusterGroup;
-    window.isValidVNCoordinate = isValidVNCoordinate;
-    window.haversine = haversine;
-    window.updateOfficerMarker = updateOfficerMarker;
-    window.removeOfficerMarker = removeOfficerMarker;
-    window.createOfficerIcon = createOfficerIcon;
-    window.getOfficerColorWithStatus = getOfficerColorWithStatus;
-
-    // Các hàm tiện ích (phải định nghĩa trước khi dùng)
+    // Các hàm tiện ích
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -355,13 +308,11 @@
                 { enableHighAccuracy: true, timeout: 10000 }
             );
         }
-        // Gán window.map sau khi khởi tạo
-        window.map = map;
-        window.officerClusterGroup = officerClusterGroup;
     }
 
-    // NoSleep (giữ sáng màn hình)
+    // NoSleep (fix giữ sáng màn hình)
     let noSleep = new NoSleep();
+    
     function enableNoSleepOnce() {
         try {
             noSleep.enable();
@@ -370,6 +321,8 @@
             console.warn("NoSleep failed:", e);
         }
     }
+    
+    // chỉ cần chạm 1 lần là bật
     document.addEventListener("click", enableNoSleepOnce, { once: true });
     document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
@@ -392,7 +345,6 @@
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
-    // Khởi chạy map và các thành phần
     initMap();
     initAudio();
     document.addEventListener("click", () => {
@@ -402,7 +354,7 @@
         }
     });
 
-    // Gửi vị trí lên Firebase
+    // === QUAN TRỌNG: GỬI VỊ TRÍ LÊN FIREBASE ===
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
             (position) => {
@@ -438,7 +390,7 @@
         }
     }
 
-    // Real-time listeners cho officers
+    // Real-time listeners
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -481,6 +433,13 @@
             }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
         }
     });
+
+    // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
+    <!-- ALERTS_JS -->
+    <!-- DRAW_JS -->
+    <!-- TRACKING_JS -->
+    <!-- EVENTS_JS -->
+    <!-- MAP_JS -->
 
     // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
