@@ -480,12 +480,11 @@
 
     // ==================== NHÚNG CÁC MODULE ĐÃ TÁCH ====================
     // Import events.js (chứa voice logic) và các module khác
-    import "./static/js/events.js";
-    import "./static/js/alerts.js";
-    import "./static/js/draw.js";
-    import "./static/js/tracking.js";
-    import "./static/js/map.js";
-
+    import "{{ url_for('static', filename='js/events.js') }}";
+    import "{{ url_for('static', filename='js/alerts.js') }}";
+    import "{{ url_for('static', filename='js/draw.js') }}";
+    import "{{ url_for('static', filename='js/tracking.js') }}";
+    import "{{ url_for('static', filename='js/map.js') }}";
     // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
