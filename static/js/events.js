@@ -440,7 +440,6 @@ if (SpeechRecognition) {
 setTimeout(() => {
     const voiceBtn = document.getElementById("voiceBtn");
     if (voiceBtn && recognition) {
-        // Xóa sự kiện cũ nếu có
         voiceBtn.onclick = null;
         voiceBtn.onclick = () => {
             if (isListening) return;
@@ -470,22 +469,16 @@ function sendVoiceToFirebase(text) {
 }
 
 // Lắng nghe tin nhắn voice từ Firebase
-const voiceMessagesRef = query(
-    ref(db, 'voice_messages'),
-    limitToLast(20)
-);
-
+const voiceMessagesRef = ref(db, 'voice_messages');
 onChildAdded(voiceMessagesRef, (snapshot) => {
     const data = snapshot.val();
     if (!data) return;
-    // Bỏ qua tin nhắn của chính mình
-    if (data.sender === clientId) return;
+    if (data.sender === clientId) return; // bỏ qua tin nhắn của chính mình
     handleVoiceMessage(data.message);
 });
 
-// Xử lý tin nhắn voice: hiển thị cảnh báo và đọc
+// Xử lý tin nhắn voice: hiển thị popup và đọc to
 function handleVoiceMessage(text) {
-    // Hiển thị thông báo trên bản đồ (popup)
     if (map) {
         const center = map.getCenter();
         L.popup()
@@ -494,7 +487,6 @@ function handleVoiceMessage(text) {
             .openOn(map);
         setTimeout(() => map.closePopup(), 5000);
     }
-    // Đọc to tin nhắn
     speak(text);
 }
 
@@ -504,19 +496,16 @@ function speak(text) {
         console.warn("Speech synthesis not supported");
         return;
     }
-    // Hủy bất kỳ luồng đọc đang diễn ra
     window.speechSynthesis.cancel();
-    
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "vi-VN";
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
-    
     window.speechSynthesis.speak(utterance);
 }
 
-// Kích hoạt âm thanh sau cú click đầu tiên (chính sách trình duyệt)
+// Kích hoạt âm thanh sau cú click đầu tiên
 document.addEventListener("click", () => {
     if (window.speechSynthesis) {
         const silent = new SpeechSynthesisUtterance("");
