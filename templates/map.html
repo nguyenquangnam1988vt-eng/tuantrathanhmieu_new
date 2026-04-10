@@ -14,7 +14,6 @@
     <style>
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
-        /* Tooltip tùy chỉnh cho marker */
         .custom-tooltip {
             background: rgba(255,255,255,0.9);
             border: 1px solid #ccc;
@@ -67,7 +66,6 @@
         .drawing-info { background: white; padding: 5px 10px; border-radius: 8px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
 
-        /* Nút khóa màn hình - góc phải dưới */
         #lockBtn {
             position: fixed;
             bottom: 150px;
@@ -107,7 +105,6 @@
             border-radius: 20px;
         }
 
-        /* Nút Follow Me */
         #followBtn {
             position: fixed;
             bottom: 150px;
@@ -132,13 +129,11 @@
 <body>
 <div id="map"></div>
 
-<!-- Nút khóa màn hình -->
 <button id="lockBtn">🔒 Khóa</button>
 <div id="lockOverlay">
     <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
 </div>
 
-<!-- Nút Follow Me -->
 <button id="followBtn" class="active">🎯 Bám theo tôi</button>
 
 <script type="module">
@@ -161,7 +156,6 @@
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // Hàm an toàn để xử lý object từ Python
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
@@ -172,7 +166,6 @@
     const safeUserColors = safeObject(userColors);
     if (typeof userRole !== 'string') userRole = 'officer';
 
-    // Biến toàn cục
     let map = null;
     let officerClusterGroup = null;
     let allOfficers = {};
@@ -203,9 +196,8 @@
     let arrowTempLine = null;
     let drawingLayers = {};
     let userDragging = false;
-    let followMe = true;  // Chế độ bám theo mình
+    let followMe = true;
 
-    // ========== CACHE ==========
     function saveOfficersToCache() {
         try {
             localStorage.setItem("cached_officers", JSON.stringify(allOfficers));
@@ -217,7 +209,6 @@
             if (cached) {
                 const parsed = JSON.parse(cached);
                 Object.assign(allOfficers, parsed);
-                // Khởi tạo marker từ cache
                 for (const [uid, officer] of Object.entries(parsed)) {
                     if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
                         updateOfficerMarker(uid, officer);
@@ -230,19 +221,18 @@
         return false;
     }
 
-    // ========== TRẠNG THÁI CÁN BỘ ==========
     function getOfficerStatus(lastUpdate) {
         const diff = Date.now() - lastUpdate;
-        if (diff < 60000) return "active";      // <1 phút
-        if (diff < 300000) return "slow";       // 1-5 phút
-        return "offline";                       // >5 phút
+        if (diff < 60000) return "active";
+        if (diff < 300000) return "slow";
+        return "offline";
     }
 
     function getStatusColor(status) {
         switch(status) {
-            case "active": return "#22c55e";  // xanh
-            case "slow": return "#eab308";    // vàng
-            default: return "#9ca3af";        // xám cho mất tín hiệu
+            case "active": return "#22c55e";
+            case "slow": return "#eab308";
+            default: return "#9ca3af";
         }
     }
 
@@ -252,7 +242,6 @@
         return getStatusColor(status);
     }
 
-    // Cập nhật hàm updateOfficerMarker với HTML tooltip
     function updateOfficerMarker(uid, officer) {
         if (!map || !officerClusterGroup) return;
         if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
@@ -263,7 +252,6 @@
         const color = getOfficerColorWithStatus(uid, lastUpdate);
         const statusText = status === "active" ? "🟢 Hoạt động" : (status === "slow" ? "🟡 Chậm" : "⚪ Mất tín hiệu");
         const nameUpper = (officer.name || uid).toUpperCase();
-        // HTML tooltip với tên đậm, trạng thái nhỏ hơn, căn giữa
         const tooltipHTML = `<div style="text-align:center"><strong>${nameUpper}</strong><br><span class="status-text" style="font-size:10px; opacity:0.7">${statusText}</span></div>`;
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
@@ -289,7 +277,6 @@
         }
     }
 
-    // Các hàm tiện ích (giữ nguyên)
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -409,7 +396,6 @@
         }
     }
 
-    // NoSleep
     let noSleep = new NoSleep();
     function enableNoSleepOnce() {
         try {
@@ -420,7 +406,6 @@
     document.addEventListener("click", enableNoSleepOnce, { once: true });
     document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
-    // FCM foreground
     if (fcmVapidKey !== "") {
         onMessage(messaging, payload => {
             if (Notification.permission === 'granted') {
@@ -439,7 +424,6 @@
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
-    // Khởi tạo map, audio
     initMap();
     initAudio();
     document.addEventListener("click", () => {
@@ -449,57 +433,48 @@
         }
     });
 
-            // === GỬI VỊ TRÍ LÊN FIREBASE VÀ FOLLOW ME ===
-            let lastTrackLat = null;
-            let lastTrackLng = null;
-            
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(
-                    (position) => {
-                        const lat = position.coords.latitude;
-                        const lng = position.coords.longitude;
-                        if (!isValidVNCoordinate(lat, lng)) return;
-                        
-                        // Ghi track nếu di chuyển đủ xa (>= 15 mét)
-                        if (lastTrackLat !== null && lastTrackLng !== null) {
-                            const dist = haversine(lastTrackLat, lastTrackLng, lat, lng);
-                            if (dist >= 15) {
-                                push(ref(db, 'tracks/' + myUsername + '/points'), {
-                                    lat: lat,
-                                    lng: lng,
-                                    timestamp: serverTimestamp()
-                                }).catch(console.error);
-                            }
-                        }
-                        lastTrackLat = lat;
-                        lastTrackLng = lng;
-                        
-                        const data = {
+    let lastTrackLat = null;
+    let lastTrackLng = null;
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                if (!isValidVNCoordinate(lat, lng)) return;
+                if (lastTrackLat !== null && lastTrackLng !== null) {
+                    const dist = haversine(lastTrackLat, lastTrackLng, lat, lng);
+                    if (dist >= 15) {
+                        push(ref(db, 'tracks/' + myUsername + '/points'), {
                             lat: lat,
                             lng: lng,
-                            name: myName,
-                            lastUpdate: Date.now()
-                        };
-                        set(ref(db, 'officers/' + myUsername), data).catch(console.error);
-                        // Cập nhật vị trí của mình trong allOfficers để marker di chuyển
-                        allOfficers[myUsername] = data;
-                        updateOfficerMarker(myUsername, data);
-                        // Follow Me
-                        if (followMe && !userDragging && map) {
-                            map.setView([lat, lng]);
-                        }
-                    },
-                    (error) => console.error("GPS error:", error),
-                    { enableHighAccuracy: true, maximumAge: 10000, timeout: 200000 }
-                );
-            } else {
-                console.warn("Geolocation not supported");
-            }
+                            timestamp: serverTimestamp()
+                        }).catch(console.error);
+                    }
+                }
+                lastTrackLat = lat;
+                lastTrackLng = lng;
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now()
+                };
+                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
+                allOfficers[myUsername] = data;
+                updateOfficerMarker(myUsername, data);
+                if (followMe && !userDragging && map) {
+                    map.setView([lat, lng]);
+                }
+            },
+            (error) => console.error("GPS error:", error),
+            { enableHighAccuracy: true, maximumAge: 10000, timeout: 200000 }
+        );
+    } else {
+        console.warn("Geolocation not supported");
+    }
 
-    // === LOAD CACHE TRƯỚC ===
     const hasCache = loadOfficersFromCache();
 
-    // Khởi tạo officers từ safeInitialOfficers (nếu có cache thì bổ sung)
     for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
         if (officer && isValidVNCoordinate(officer.lat, officer.lng) && !allOfficers[uid]) {
             allOfficers[uid] = officer;
@@ -507,12 +482,10 @@
         }
     }
 
-    // Lưu cache khi có thay đổi từ realtime (sẽ gọi sau khi cập nhật allOfficers)
     function saveCacheAfterChange() {
         saveOfficersToCache();
     }
 
-    // Real-time listeners
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -549,7 +522,6 @@
         saveCacheAfterChange();
     });
 
-    // Stationary officers (giữ nguyên)
     safeStationaryOfficers.forEach(officer => {
         if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
             L.circleMarker([officer.lat, officer.lng], {
@@ -559,15 +531,68 @@
         }
     });
 
-    // ==================== NHÚNG CÁC MODULE ====================
-    // Các module khác (alerts, draw, tracking, events, map) - giữ nguyên placeholder
     <!-- ALERTS_JS -->
     <!-- DRAW_JS -->
     <!-- TRACKING_JS -->
     <!-- EVENTS_JS -->
     <!-- MAP_JS -->
 
-    // ==================== NÚT KHÓA MÀN HÌNH ====================
+    // ==================== BROADCAST (PHÁT THANH CHỈ HUY) ====================
+    const broadcastsRef = ref(db, 'broadcasts');
+    let lastBroadcastIds = new Set();
+    let isInitialLoad = true;
+
+    function speakBroadcast(message, sender) {
+        if (!window.speechSynthesis) {
+            console.warn("SpeechSynthesis không được hỗ trợ");
+            return;
+        }
+        window.speechSynthesis.cancel();
+        const fullMessage = `Thông báo từ ${sender}. ${message}`;
+        const utterance = new SpeechSynthesisUtterance(fullMessage);
+        utterance.lang = "vi-VN";
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        const voices = window.speechSynthesis.getVoices();
+        const viVoice = voices.find(v => v.lang === "vi-VN");
+        if (viVoice) utterance.voice = viVoice;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    onChildAdded(broadcastsRef, (snapshot) => {
+        const broadcast = snapshot.val();
+        const broadcastId = snapshot.key;
+        if (!broadcast || !broadcast.text) return;
+        if (lastBroadcastIds.has(broadcastId)) return;
+        if (isInitialLoad) {
+            lastBroadcastIds.add(broadcastId);
+            return;
+        }
+        lastBroadcastIds.add(broadcastId);
+        if (lastBroadcastIds.size > 100) {
+            const toDelete = [...lastBroadcastIds].slice(0, 50);
+            toDelete.forEach(id => lastBroadcastIds.delete(id));
+        }
+        const sender = broadcast.sender || broadcast.senderId || "Chỉ huy";
+        const message = broadcast.text;
+        console.log(`📢 Broadcast từ ${sender}: ${message}`);
+        if (map) {
+            const center = map.getCenter();
+            L.popup()
+                .setLatLng(center)
+                .setContent(`📢 <b>THÔNG BÁO TỪ ${sender.toUpperCase()}</b><br>${message}`)
+                .openOn(map);
+            setTimeout(() => map.closePopup(), 8000);
+        }
+        speakBroadcast(message, sender);
+    });
+
+    setTimeout(() => {
+        isInitialLoad = false;
+        console.log("Broadcast listener ready");
+    }, 2000);
+
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
     let isLocked = false;
@@ -584,7 +609,6 @@
         }
     };
 
-    // ==================== NÚT FOLLOW ME ====================
     const followBtn = document.getElementById("followBtn");
     followBtn.onclick = () => {
         followMe = !followMe;
@@ -592,7 +616,6 @@
             followBtn.classList.add("active");
             followBtn.textContent = "🎯 Bám theo tôi";
             followBtn.style.background = "#10b981";
-            // Nếu đang có vị trí của mình, lập tức di chuyển map
             const myPos = allOfficers[myUsername];
             if (myPos && myPos.lat && myPos.lng && map && !userDragging) {
                 map.setView([myPos.lat, myPos.lng]);
