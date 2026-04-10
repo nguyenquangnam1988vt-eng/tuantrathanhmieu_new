@@ -169,23 +169,6 @@ def cleanup_old_data():
             for key, order in move_orders.items():
                 if now - order.get("timestamp", 0) > 30 * 60 * 1000:
                     db.child("move_orders").child(key).remove()
-        
-        # Xóa broadcasts cũ hơn 24h
-        broadcasts = db.child("broadcasts").get().val()
-        if broadcasts:
-            now = int(time.time() * 1000)
-            for key, bc in broadcasts.items():
-                if now - bc.get("timestamp", 0) > 24 * 3600 * 1000:
-                    db.child("broadcasts").child(key).remove()
-        
-        # Xóa area_broadcasts cũ hơn 24h
-        area_broadcasts = db.child("area_broadcasts").get().val()
-        if area_broadcasts:
-            now = int(time.time() * 1000)
-            for key, bc in area_broadcasts.items():
-                if now - bc.get("timestamp", 0) > 24 * 3600 * 1000:
-                    db.child("area_broadcasts").child(key).remove()
-                    
     except Exception as e:
         print("Cleanup error:", e)
 
