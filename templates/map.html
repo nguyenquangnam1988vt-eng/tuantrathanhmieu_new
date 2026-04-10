@@ -202,12 +202,10 @@
     let audioReady = false;
     let pendingBroadcasts = [];
 
-    // ========== LƯU TRẠNG THÁI AUDIO VÀO SESSIONSTORAGE ==========
     if (sessionStorage.getItem('audioReady') === 'true') {
         audioReady = true;
     }
 
-    // Toast
     const toast = document.getElementById('audioToast');
     function showAudioToast() {
         if (!audioReady) {
@@ -231,7 +229,6 @@
         sessionStorage.setItem('audioReady', 'true');
         toast.style.opacity = '0';
         setTimeout(() => toast.style.visibility = 'hidden', 500);
-        // Silent Web Audio
         if (window.AudioContext || window.webkitAudioContext) {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const buffer = audioCtx.createBuffer(1, 1, 22050);
@@ -241,7 +238,6 @@
             source.start();
             audioCtx.resume().then(() => console.log("AudioContext resumed"));
         }
-        // SpeechSynthesis silent
         if (window.speechSynthesis) {
             const dummy = new SpeechSynthesisUtterance("");
             dummy.lang = "vi-VN";
@@ -739,31 +735,42 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST ====================
+    // ==================== AREA BROADCAST (ĐÃ SỬA HOÀN TOÀN) ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
     let activeAreaCircles = {};
     let activeBlinkIntervals = {};
 
+    // Hàm dọn dẹp visuals (xóa khỏi map và reset biến)
     function clearAllAreaVisuals() {
+        // Xóa tất cả circle khỏi map
         for (const id in activeAreaCircles) {
-            if (activeAreaCircles[id]) map.removeLayer(activeAreaCircles[id]);
+            if (activeAreaCircles[id]) {
+                map.removeLayer(activeAreaCircles[id]);
+            }
             delete activeAreaCircles[id];
         }
+        // Dừng tất cả interval nhấp nháy
         for (const intervalId in activeBlinkIntervals) {
             clearInterval(activeBlinkIntervals[intervalId]);
             delete activeBlinkIntervals[intervalId];
         }
+        // Reset biến (đảm bảo không còn reference cũ)
+        activeAreaCircles = {};
+        activeBlinkIntervals = {};
     }
 
+    // Hàm xóa toàn bộ cảnh báo khu vực (gọi từ nút)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
+            // 1. Xóa dữ liệu trên Firebase
             await remove(areaBroadcastsRef);
+            // 2. Xóa visuals ngay lập tức
             clearAllAreaVisuals();
             alert("Đã xóa tất cả cảnh báo khu vực.");
         } catch (error) {
             console.error("Lỗi khi xóa area broadcasts:", error);
-            alert("Có lỗi xảy ra khi xóa.");
+            alert("Có lỗi xảy ra khi xóa: " + error.message);
         }
     }
 
@@ -789,11 +796,15 @@
 
     function handleAreaBroadcast(data, key) {
         if (!data || !data.lat || !data.lng) return;
+        // Kiểm tra dữ liệu có hợp lệ không (tránh vẽ lại sau khi xóa)
+        if (!data.timestamp || data.timestamp === 0) return;
+        
         const broadcastId = key;
         const { lat, lng, radius = 500, text, sender } = data;
         const senderName = sender || "Chỉ huy";
         const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
 
+        // Nếu đã có circle cho broadcast này thì không vẽ lại
         if (activeAreaCircles[broadcastId]) return;
 
         const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
@@ -837,6 +848,8 @@
         const data = snapshot.val();
         const key = snapshot.key;
         if (!data) return;
+        // Kiểm tra timestamp để tránh dữ liệu cũ
+        if (data.timestamp && Date.now() - data.timestamp > 24 * 60 * 60 * 1000) return;
         handleAreaBroadcast(data, key);
     });
 
@@ -852,6 +865,7 @@
         }
     });
 
+    // Quan trọng: khi database rỗng (snapshot null) thì dọn dẹp toàn bộ
     onValue(areaBroadcastsRef, (snapshot) => {
         const data = snapshot.val();
         if (data === null) {
@@ -922,14 +936,23 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-        setTimeout(() => {
-            const clearAreaBtn = document.getElementById('clear-all-area');
-            if (clearAreaBtn) {
-                clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
-            } else {
-                console.warn("Không tìm thấy nút clear-all-area");
-            }
-        }, 500);
+        
+        // Gắn sự kiện trực tiếp cho nút xóa cảnh báo khu vực (KHÔNG dùng setTimeout)
+        const clearAreaBtn = document.getElementById('clear-all-area');
+        if (clearAreaBtn) {
+            clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
+        } else {
+            console.warn("Không tìm thấy nút clear-all-area, sẽ thử lại sau 100ms");
+            // Fallback: nếu chưa có thì đợi DOM render
+            const checkInterval = setInterval(() => {
+                const btn = document.getElementById('clear-all-area');
+                if (btn) {
+                    btn.addEventListener('click', clearAllAreaBroadcasts);
+                    clearInterval(checkInterval);
+                }
+            }, 100);
+            setTimeout(() => clearInterval(checkInterval), 5000);
+        }
     }
 
     // ==================== OFFICER ARROW ====================
