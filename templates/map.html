@@ -12,7 +12,6 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
-        /* ... giữ nguyên style ... */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .custom-tooltip {
@@ -241,10 +240,22 @@
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
-            officerMarkers[uid].bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
+            officerMarkers[uid].bindTooltip(tooltipHTML, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -12],
+                interactive: true,
+                className: 'custom-tooltip'
+            });
         } else {
             const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
-            marker.bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
+            marker.bindTooltip(tooltipHTML, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -12],
+                interactive: true,
+                className: 'custom-tooltip'
+            });
             officerClusterGroup.addLayer(marker);
             officerMarkers[uid] = marker;
         }
@@ -485,19 +496,13 @@
         }
     });
 
-    <!-- ALERTS_JS -->
-    <!-- DRAW_JS -->
-    <!-- TRACKING_JS -->
-    <!-- EVENTS_JS -->
-    <!-- MAP_JS -->
-
-    // ==================== BROADCAST (PHÁT THANH CHỈ HUY) ====================
+    // ==================== BROADCAST ====================
     const broadcastsRef = ref(db, 'broadcasts');
     let lastBroadcastIds = new Set();
     let isInitialLoad = true;
 
     function speakBroadcast(message, sender) {
-        if (!window.speechSynthesis) { console.warn("SpeechSynthesis không được hỗ trợ"); return; }
+        if (!window.speechSynthesis) return;
         window.speechSynthesis.cancel();
         const fullMessage = `Thông báo từ ${sender}. ${message}`;
         const utterance = new SpeechSynthesisUtterance(fullMessage);
@@ -535,7 +540,7 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST (PHÁT LỆNH KHU VỰC) ====================
+    // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
     let activeBlinkIntervals = {};
 
@@ -602,11 +607,10 @@
     onChildAdded(areaBroadcastsRef, (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
-        // if (data.senderId === myUsername) return; // bỏ comment nếu muốn bỏ qua tin của mình
         handleAreaBroadcast(data);
     });
 
-    // ==================== DIALOG THÊM ĐIỂM (có nút Phát lệnh khu vực) ====================
+    // ==================== DIALOG (CHỈ MỘT LẦN) ====================
     function showPointDialog(latlng) {
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
@@ -722,7 +726,6 @@
         }
     }
 
-    // Gắn sự kiện map
     map.on('contextmenu', (e) => {
         if (selectionMode || drawingMode || arrowMode) return;
         e.originalEvent.preventDefault();
