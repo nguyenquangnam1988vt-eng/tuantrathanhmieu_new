@@ -112,7 +112,6 @@
         }
         #followBtn.active { background: #ef4444; }
         #followBtn:active { transform: scale(0.96); }
-        /* Toast thông báo bật âm thanh */
         .audio-toast {
             position: fixed;
             bottom: 80px;
@@ -203,6 +202,11 @@
     let audioReady = false;
     let pendingBroadcasts = [];
 
+    // ========== LƯU TRẠNG THÁI AUDIO VÀO SESSIONSTORAGE ==========
+    if (sessionStorage.getItem('audioReady') === 'true') {
+        audioReady = true;
+    }
+
     // Toast
     const toast = document.getElementById('audioToast');
     function showAudioToast() {
@@ -215,6 +219,8 @@
                     setTimeout(() => toast.style.visibility = 'hidden', 500);
                 }
             }, 5000);
+        } else {
+            toast.style.display = 'none';
         }
     }
     showAudioToast();
@@ -222,6 +228,7 @@
     function enableAudio() {
         if (audioReady) return;
         audioReady = true;
+        sessionStorage.setItem('audioReady', 'true');
         toast.style.opacity = '0';
         setTimeout(() => toast.style.visibility = 'hidden', 500);
         if (window.AudioContext || window.webkitAudioContext) {
@@ -573,6 +580,56 @@
         }
     });
 
+    // ==================== MARKERS (ĐIỂM ĐÁNH DẤU) - FIX LỖI ====================
+    const markersRootRef = ref(db, 'markers');
+    onChildAdded(markersRootRef, (userSnapshot) => {
+        const userId = userSnapshot.key;
+        const userMarkersRef = ref(db, `markers/${userId}`);
+        onChildAdded(userMarkersRef, (markerSnapshot) => {
+            const point = markerSnapshot.val();
+            if (!point || !point.timestamp) return;
+            const markerId = markerSnapshot.key;
+            const fullId = `${userId}_${markerId}`;
+            const age = Date.now() - point.timestamp;
+            if (age > 24*60*60*1000) { remove(ref(db, `markers/${userId}/${markerId}`)); return; }
+            if (isValidVNCoordinate(point.lat, point.lng)) {
+                const marker = L.circleMarker([point.lat, point.lng], {
+                    radius: 6, color: '#ffaa00', fillColor: '#ffaa00', fillOpacity: 0.8, weight: 1,
+                    renderer: L.canvas()
+                }).addTo(map);
+                let popupContent = `<b>${point.created_by || 'Unknown'}</b><br>${point.note || ''}<br>${new Date(point.timestamp).toLocaleString()}`;
+                const canDelete = (point.created_by === myName) || (userRole === 'commander') || (userRole === 'admin');
+                if (canDelete) {
+                    popupContent += `<br><button class="delete-btn" data-fullid="${fullId}" data-userid="${userId}" data-markerid="${markerId}">🗑️ Xoá điểm</button>`;
+                }
+                marker.bindPopup(popupContent);
+                pointMarkers[fullId] = marker;
+            }
+        });
+        onChildRemoved(userMarkersRef, (markerSnapshot) => {
+            const markerId = markerSnapshot.key;
+            const fullId = `${userId}_${markerId}`;
+            if (pointMarkers[fullId]) {
+                map.removeLayer(pointMarkers[fullId]);
+                delete pointMarkers[fullId];
+            }
+        });
+    });
+
+    // Xóa marker khi click nút
+    document.addEventListener('click', async (e) => {
+        if (e.target && e.target.classList.contains('delete-btn')) {
+            const fullId = e.target.getAttribute('data-fullid');
+            const userId = e.target.getAttribute('data-userid');
+            const markerId = e.target.getAttribute('data-markerid');
+            if (fullId && userId && markerId) {
+                if (confirm("Xóa điểm đánh dấu này?")) {
+                    await remove(ref(db, `markers/${userId}/${markerId}`));
+                }
+            }
+        }
+    });
+
     // ==================== ALERTS ====================
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
@@ -649,21 +706,31 @@
     });
     onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
 
-    // ==================== BROADCAST ====================
+    // ==================== BROADCAST (KHÔNG PHÁT LẠI KHI RELOAD) ====================
     const broadcastsRef = ref(db, 'broadcasts');
-    let lastBroadcastIds = new Set();
+    let lastBroadcastIds = new Set(JSON.parse(sessionStorage.getItem("playedBroadcasts") || "[]"));
     let isInitialLoad = true;
+
+    function savePlayedBroadcasts() {
+        sessionStorage.setItem("playedBroadcasts", JSON.stringify([...lastBroadcastIds]));
+    }
 
     onChildAdded(broadcastsRef, (snapshot) => {
         const broadcast = snapshot.val();
         const broadcastId = snapshot.key;
         if (!broadcast || !broadcast.text) return;
         if (lastBroadcastIds.has(broadcastId)) return;
-        if (isInitialLoad) { lastBroadcastIds.add(broadcastId); return; }
+        if (isInitialLoad) {
+            lastBroadcastIds.add(broadcastId);
+            savePlayedBroadcasts();
+            return;
+        }
         lastBroadcastIds.add(broadcastId);
+        savePlayedBroadcasts();
         if (lastBroadcastIds.size > 100) {
             const toDelete = [...lastBroadcastIds].slice(0, 50);
             toDelete.forEach(id => lastBroadcastIds.delete(id));
+            savePlayedBroadcasts();
         }
         const sender = broadcast.sender || broadcast.senderId || "Chỉ huy";
         const message = broadcast.text;
@@ -680,14 +747,20 @@
 
     // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
-    let activeBlinkIntervals = {};
+    let activeAreaCircles = {};      // Lưu circle layer theo ID
+    let activeBlinkIntervals = {};   // Lưu interval nhấp nháy theo ID
 
-    // 🔥 HÀM XÓA TOÀN BỘ CẢNH BÁO KHU VỰC (SỬA LỖI)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
-            await remove(areaBroadcastsRef); // xóa toàn bộ node
-            // dừng tất cả vòng tròn nhấp nháy
+            // Xóa dữ liệu Firebase
+            await remove(areaBroadcastsRef);
+            // Xóa tất cả circle khỏi bản đồ
+            for (const id in activeAreaCircles) {
+                if (activeAreaCircles[id]) map.removeLayer(activeAreaCircles[id]);
+                delete activeAreaCircles[id];
+            }
+            // Dừng tất cả interval nhấp nháy
             for (const intervalId in activeBlinkIntervals) {
                 clearInterval(activeBlinkIntervals[intervalId]);
                 delete activeBlinkIntervals[intervalId];
@@ -721,11 +794,14 @@
 
     function handleAreaBroadcast(data) {
         if (!data || !data.lat || !data.lng) return;
+        const broadcastId = Date.now() + Math.random();
         const { lat, lng, radius = 500, text, sender } = data;
         const senderName = sender || "Chỉ huy";
         const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
 
         const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
+        activeAreaCircles[broadcastId] = circle;
+        
         let visible = true;
         const blinkInterval = setInterval(() => {
             if (!map) { clearInterval(blinkInterval); return; }
@@ -733,12 +809,13 @@
             else circle.addTo(map);
             visible = !visible;
         }, 600);
-        const intervalId = Date.now() + Math.random();
-        activeBlinkIntervals[intervalId] = blinkInterval;
+        activeBlinkIntervals[broadcastId] = blinkInterval;
+        
         setTimeout(() => {
             clearInterval(blinkInterval);
+            delete activeBlinkIntervals[broadcastId];
             if (map && circle) circle.addTo(map);
-            delete activeBlinkIntervals[intervalId];
+            delete activeAreaCircles[broadcastId];
         }, 10000);
 
         if (map) {
@@ -828,7 +905,6 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-        // 🔥 Gắn sự kiện cho nút xóa area broadcasts (đảm bảo DOM đã render)
         setTimeout(() => {
             const clearAreaBtn = document.getElementById('clear-all-area');
             if (clearAreaBtn) {
