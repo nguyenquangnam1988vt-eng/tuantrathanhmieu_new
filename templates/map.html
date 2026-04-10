@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
+        /* ===== GIỮ NGUYÊN STYLE TỪ CODE CŨ ===== */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .custom-tooltip {
@@ -57,8 +58,6 @@
         .drawing-toolbar button:hover { opacity: 0.8; }
         .drawing-info { background: white; padding: 5px 10px; border-radius: 8px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         .delete-drawing { background: #ff4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; margin-top: 5px; cursor: pointer; }
-
-        /* Nút khóa màn hình - góc phải dưới */
         #lockBtn {
             position: fixed;
             bottom: 150px;
@@ -97,8 +96,6 @@
             padding: 20px 30px;
             border-radius: 20px;
         }
-
-        /* Nút Follow Me */
         #followBtn {
             position: fixed;
             bottom: 150px;
@@ -114,11 +111,8 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             transition: 0.2s;
         }
-        #followBtn.active {
-            background: #ef4444;
-        }
+        #followBtn.active { background: #ef4444; }
         #followBtn:active { transform: scale(0.96); }
-        /* Toast thông báo bật âm thanh */
         .audio-toast {
             position: fixed;
             bottom: 80px;
@@ -140,14 +134,8 @@
 </head>
 <body>
 <div id="map"></div>
-
-<!-- Nút khóa màn hình -->
 <button id="lockBtn">🔒 Khóa</button>
-<div id="lockOverlay">
-    <div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div>
-</div>
-
-<!-- Nút Follow Me -->
+<div id="lockOverlay"><div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div></div>
 <button id="followBtn" class="active">🎯 Bám theo tôi</button>
 <div id="audioToast" class="audio-toast" style="opacity:0; visibility:hidden;">🔊 Chạm vào màn hình để bật âm thanh</div>
 
@@ -179,7 +167,6 @@
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
-
     const safeShowTracks = safeObject(showTracks);
     const safeInitialOfficers = safeObject(initialOfficers);
     const safeStationaryOfficers = Array.isArray(stationaryOfficers) ? stationaryOfficers : [];
@@ -220,7 +207,7 @@
     let audioReady = false;
     let pendingBroadcasts = [];
 
-    // Toast
+    // Toast audio
     const toast = document.getElementById('audioToast');
     function showAudioToast() {
         if (!audioReady) {
@@ -336,7 +323,7 @@
         return getStatusColor(status);
     }
 
-    // HÀM isValidVNCoordinate NỚI LỎNG (CHỈ KIỂM TRA SỐ VÀ KHÁC 0)
+    // HÀM isValidVNCoordinate NỚI LỎNG
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -345,7 +332,7 @@
         return true;
     }
 
-    // HÀM updateOfficerMarker CÓ RETRY KHI MAP CHƯA SẴN SÀNG
+    // HÀM updateOfficerMarker CÓ RETRY
     function updateOfficerMarker(uid, officer) {
         if (!map || !officerClusterGroup) {
             console.warn("Map or cluster not ready, will retry in 500ms");
@@ -610,7 +597,6 @@
     });
 
     // ==================== ALERTS (BÁO ĐỘNG) ====================
-    // (Đã có trong alerts.js, nhưng để đảm bảo không bị thiếu, ta vẫn khai báo lại các biến cần thiết)
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
     const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
@@ -1030,7 +1016,7 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
-    // ==================== DIALOG (THÊM ĐIỂM VÀ RA LỆNH) ====================
+    // ==================== DIALOG THÊM ĐIỂM (CÓ PHÁT LỆNH KHU VỰC) ====================
     function showPointDialog(latlng) {
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
@@ -1160,20 +1146,105 @@
         }
     }
 
-    map.on('contextmenu', (e) => {
-        if (selectionMode || drawingMode || arrowMode) return;
-        e.originalEvent.preventDefault();
-        showPointDialog(e.latlng);
+    // ==================== MOVE ORDERS (LẮNG NGHE VÀ VẼ ĐƯỜNG) ====================
+    const moveOrdersRef = ref(db, 'move_orders');
+    onChildAdded(moveOrdersRef, (snapshot) => {
+        const order = snapshot.val();
+        const orderId = snapshot.key;
+        if (!order || order.status !== 'active') return;
+        if (!isValidVNCoordinate(order.toLat, order.toLng)) return;
+        const latlngs = [[order.fromLat, order.fromLng], [order.toLat, order.toLng]];
+        const polyline = L.polyline(latlngs, {
+            color: '#ff8800', weight: 4, opacity: 0.8, dashArray: '5, 10',
+            renderer: L.canvas()
+        }).addTo(map);
+        if (polyline.arrowheads) polyline.arrowheads({ size: '12px', frequency: 'all', color: '#ff8800' });
+        const officerName = allOfficers[order.officerId]?.name || order.officerId;
+        let popupContent = `📍 Lệnh di chuyển<br>Từ: ${order.commanderName}<br>Đến: ${officerName}<br>Điểm đến: ${order.toLat.toFixed(6)}, ${order.toLng.toFixed(6)}<br>Ghi chú: ${order.note || 'không'}`;
+        const canCancel = (order.commanderId === myUsername) || (userRole === 'commander') || (userRole === 'admin');
+        if (canCancel) {
+            popupContent += `<br><button class="delete-btn" data-orderid="${orderId}">❌ Huỷ lệnh</button>`;
+        }
+        polyline.bindPopup(popupContent);
+        moveOrderLines[orderId] = polyline;
+        if (order.officerId === myUsername) {
+            L.popup().setLatLng([order.toLat, order.toLng]).setContent(`🚶 Bạn được lệnh di chuyển đến đây từ ${order.commanderName}<br>Ghi chú: ${order.note || 'không'}`).openOn(map);
+        }
     });
-    let touchTimer = null;
-    map.on('touchstart', (e) => {
-        if (selectionMode || drawingMode || arrowMode) return;
-        const touch = e.originalEvent.touches[0];
-        const latlng = map.mouseEventToLatLng(touch);
-        touchTimer = setTimeout(() => { showPointDialog(latlng); }, 800);
+    onChildRemoved(moveOrdersRef, (snapshot) => {
+        const orderId = snapshot.key;
+        if (moveOrderLines[orderId]) {
+            map.removeLayer(moveOrderLines[orderId]);
+            delete moveOrderLines[orderId];
+        }
     });
-    map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
-    map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
+    function checkOrdersCompletion() {
+        get(moveOrdersRef).then((snapshot) => {
+            const orders = snapshot.val() || {};
+            for (const [orderId, order] of Object.entries(orders)) {
+                if (order.status !== 'active') continue;
+                const officerPos = allOfficers[order.officerId];
+                if (!officerPos) continue;
+                const dist = haversine(officerPos.lat, officerPos.lng, order.toLat, order.toLng);
+                if (dist < 20) {
+                    remove(ref(db, 'move_orders/' + orderId));
+                }
+            }
+        }).catch(console.error);
+    }
+    setInterval(checkOrdersCompletion, 5000);
+
+    // ==================== MARKERS & INCIDENTS ====================
+    const markersRootRef = ref(db, 'markers');
+    onChildAdded(markersRootRef, (userSnapshot) => {
+        const userId = userSnapshot.key;
+        const userMarkersRef = ref(db, `markers/${userId}`);
+        onChildAdded(userMarkersRef, (markerSnapshot) => {
+            const point = markerSnapshot.val();
+            if (!point || !point.timestamp) return;
+            const markerId = markerSnapshot.key;
+            const fullId = `${userId}_${markerId}`;
+            const age = Date.now() - point.timestamp;
+            if (age > 24*60*60*1000) { remove(ref(db, `markers/${userId}/${markerId}`)); return; }
+            if (isValidVNCoordinate(point.lat, point.lng)) {
+                const marker = L.circleMarker([point.lat, point.lng], {
+                    radius: 6, color: '#ffaa00', fillColor: '#ffaa00', fillOpacity: 0.8, weight: 1,
+                    renderer: L.canvas()
+                }).addTo(map);
+                let popupContent = `<b>${point.created_by || 'Unknown'}</b><br>${point.note || ''}<br>${new Date(point.timestamp).toLocaleString()}`;
+                const canDelete = (point.created_by === myName) || (userRole === 'commander') || (userRole === 'admin');
+                if (canDelete) {
+                    popupContent += `<br><button class="delete-btn" data-fullid="${fullId}" data-userid="${userId}" data-markerid="${markerId}">🗑️ Xoá điểm</button>`;
+                }
+                marker.bindPopup(popupContent);
+                pointMarkers[fullId] = marker;
+            }
+        });
+        onChildRemoved(userMarkersRef, (markerSnapshot) => {
+            const markerId = markerSnapshot.key;
+            const fullId = `${userId}_${markerId}`;
+            if (pointMarkers[fullId]) {
+                map.removeLayer(pointMarkers[fullId]);
+                delete pointMarkers[fullId];
+            }
+        });
+    });
+
+    const incidentsRef = ref(db, 'incidents');
+    const incidentIcon = L.divIcon({ className: '', html: '<div class="incident-icon">📷</div>', iconSize: [30, 30], popupAnchor: [0, -15] });
+    onChildAdded(incidentsRef, (data) => {
+        const inc = data.val();
+        const id = data.key;
+        if (!inc || !inc.timestamp) return;
+        const age = Date.now() - inc.timestamp;
+        if (age > 24*60*60*1000) { remove(ref(db, 'incidents/' + id)); return; }
+        if (isValidVNCoordinate(inc.lat, inc.lng)) {
+            const marker = L.marker([inc.lat, inc.lng], { icon: incidentIcon }).addTo(map)
+                .bindPopup(`<b>${inc.created_by || 'Unknown'}</b><br> ${inc.note || ''}<br> <img src="${inc.image_url}" style="max-width:200px; max-height:200px;"><br> ${new Date(inc.timestamp).toLocaleString()}`);
+            incidentMarkers[id] = marker;
+        }
+    });
+    onChildRemoved(incidentsRef, (data) => { const id = data.key; if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } });
 
     // ==================== RA LỆNH TỪ SIDEBAR (giữ 5s) ====================
     if (userRole === 'commander' || userRole === 'admin') {
@@ -1300,6 +1371,22 @@
         }
         if (navigator.vibrate) navigator.vibrate(50);
     };
+
+    // Gắn các sự kiện map còn lại (contextmenu, touch) đã có trong showPointDialog, nhưng cần gọi lại để đảm bảo
+    map.on('contextmenu', (e) => {
+        if (selectionMode || drawingMode || arrowMode) return;
+        e.originalEvent.preventDefault();
+        showPointDialog(e.latlng);
+    });
+    let touchTimer = null;
+    map.on('touchstart', (e) => {
+        if (selectionMode || drawingMode || arrowMode) return;
+        const touch = e.originalEvent.touches[0];
+        const latlng = map.mouseEventToLatLng(touch);
+        touchTimer = setTimeout(() => { showPointDialog(latlng); }, 800);
+    });
+    map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
+    map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
 </script>
 </body>
 </html>
