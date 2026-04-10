@@ -112,6 +112,7 @@
         }
         #followBtn.active { background: #ef4444; }
         #followBtn:active { transform: scale(0.96); }
+        /* Toast thông báo bật âm thanh */
         .audio-toast {
             position: fixed;
             bottom: 80px;
@@ -128,15 +129,6 @@
             pointer-events: none;
             transition: opacity 0.5s;
             font-weight: bold;
-        }
-        /* CSS nhấp nháy cho vòng tròn cảnh báo khu vực */
-        .blink-circle {
-            animation: blink-animation 1s step-start infinite;
-        }
-        @keyframes blink-animation {
-            0% { opacity: 1; }
-            50% { opacity: 0.3; }
-            100% { opacity: 1; }
         }
     </style>
 </head>
@@ -211,10 +203,7 @@
     let audioReady = false;
     let pendingBroadcasts = [];
 
-    if (sessionStorage.getItem('audioReady') === 'true') {
-        audioReady = true;
-    }
-
+    // Toast
     const toast = document.getElementById('audioToast');
     function showAudioToast() {
         if (!audioReady) {
@@ -226,8 +215,6 @@
                     setTimeout(() => toast.style.visibility = 'hidden', 500);
                 }
             }, 5000);
-        } else {
-            toast.style.display = 'none';
         }
     }
     showAudioToast();
@@ -235,22 +222,28 @@
     function enableAudio() {
         if (audioReady) return;
         audioReady = true;
-        sessionStorage.setItem('audioReady', 'true');
         toast.style.opacity = '0';
         setTimeout(() => toast.style.visibility = 'hidden', 500);
         if (window.AudioContext || window.webkitAudioContext) {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const buffer = audioCtx.createBuffer(1, 1, 22050);
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-            source.start();
+            const silent = audioCtx.createBufferSource();
+            silent.buffer = audioCtx.createBuffer(1, 1, 22050);
+            silent.connect(audioCtx.destination);
+            silent.start();
             audioCtx.resume().then(() => console.log("AudioContext resumed"));
         }
         if (window.speechSynthesis) {
             const dummy = new SpeechSynthesisUtterance("");
             dummy.lang = "vi-VN";
             window.speechSynthesis.speak(dummy);
+        }
+        if (alertSound) {
+            alertSound.volume = 0;
+            alertSound.play().then(() => {
+                alertSound.pause();
+                alertSound.currentTime = 0;
+                alertSound.volume = 1;
+            }).catch(e => console.log("Alert sound activation failed", e));
         }
         if (pendingBroadcasts.length > 0) {
             console.log(`Phát lại ${pendingBroadcasts.length} broadcast đã lưu`);
@@ -282,6 +275,7 @@
         window.speechSynthesis.speak(utterance);
     }
 
+    // ========== CACHE ==========
     function saveOfficersToCache() {
         try { localStorage.setItem("cached_officers", JSON.stringify(allOfficers)); } catch(e) { console.warn("Cache save failed", e); }
     }
@@ -292,7 +286,7 @@
                 const parsed = JSON.parse(cached);
                 Object.assign(allOfficers, parsed);
                 for (const [uid, officer] of Object.entries(parsed)) {
-                    if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+                    if (officer && typeof officer.lat === 'number' && typeof officer.lng === 'number' && !(officer.lat === 0 && officer.lng === 0)) {
                         updateOfficerMarker(uid, officer);
                     }
                 }
@@ -303,6 +297,7 @@
         return false;
     }
 
+    // ========== TRẠNG THÁI CÁN BỘ ==========
     function getOfficerStatus(lastUpdate) {
         const diff = Date.now() - lastUpdate;
         if (diff < 60000) return "active";
@@ -324,9 +319,24 @@
         return getStatusColor(status);
     }
 
+    // HÀM isValidVNCoordinate NỚI LỎNG (CHỈ KIỂM TRA SỐ)
+    function isValidVNCoordinate(lat, lng) {
+        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+        if (lat === 0 && lng === 0) return false;
+        // Bỏ giới hạn vùng để test
+        // if (lat < 8 || lat > 24 || lng < 102 || lng > 110) return false;
+        return true;
+    }
+
+    // HÀM updateOfficerMarker CÓ RETRY KHI MAP CHƯA SẴN SÀNG
     function updateOfficerMarker(uid, officer) {
-        if (!map || !officerClusterGroup) return;
+        if (!map || !officerClusterGroup) {
+            console.warn("Map or cluster not ready, will retry in 500ms");
+            setTimeout(() => updateOfficerMarker(uid, officer), 500);
+            return;
+        }
         if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
+        // Kiểm tra tọa độ hợp lệ
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         const latlng = [officer.lat, officer.lng];
         const lastUpdate = officer.lastUpdate || 0;
@@ -339,21 +349,34 @@
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
             officerMarkers[uid].bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
+            console.log(`Marker updated for ${uid}`);
         } else {
             const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
             marker.bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
             officerClusterGroup.addLayer(marker);
             officerMarkers[uid] = marker;
+            console.log(`✅ New marker added for ${uid}`);
         }
     }
 
-    function isValidVNCoordinate(lat, lng) {
-        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
-        if (lat === 0 && lng === 0) return false;
-        if (lat < 8 || lat > 24 || lng < 102 || lng > 110) return false;
-        return true;
+    function removeOfficerMarker(uid) {
+        if (officerMarkers[uid]) {
+            officerClusterGroup.removeLayer(officerMarkers[uid]);
+            delete officerMarkers[uid];
+            console.log(`Marker removed for ${uid}`);
+        }
     }
 
+    function createOfficerIcon(color) {
+        return L.divIcon({
+            className: '',
+            html: `<div style="background:${color}; width:22px; height:22px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px ${color};"></div>`,
+            iconSize: [22, 22],
+            popupAnchor: [0, -12]
+        });
+    }
+
+    // ========== CÁC HÀM KHÁC GIỮ NGUYÊN ==========
     function haversine(lat1, lng1, lat2, lng2) {
         const R = 6371e3;
         const φ1 = lat1 * Math.PI/180;
@@ -399,22 +422,6 @@
             delete alertTimeouts[alertId];
         }
         if (Object.keys(alertMarkers).length === 0) stopAlertSound();
-    }
-
-    function createOfficerIcon(color) {
-        return L.divIcon({
-            className: '',
-            html: `<div style="background:${color}; width:22px; height:22px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px ${color};"></div>`,
-            iconSize: [22, 22],
-            popupAnchor: [0, -12]
-        });
-    }
-
-    function removeOfficerMarker(uid) {
-        if (officerMarkers[uid]) {
-            officerClusterGroup.removeLayer(officerMarkers[uid]);
-            delete officerMarkers[uid];
-        }
     }
 
     function initMap() {
@@ -494,6 +501,7 @@
         }
     });
 
+    // ========== GỬI VỊ TRÍ LÊN FIREBASE (ĐÃ SỬA LOGIC) ==========
     let lastTrackLat = null;
     let lastTrackLng = null;
     if (navigator.geolocation) {
@@ -501,30 +509,69 @@
             (position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
-                if (!isValidVNCoordinate(lat, lng)) return;
+                const accuracy = position.coords.accuracy;
+                console.log(`📍 GPS: lat=${lat}, lng=${lng}, acc=${accuracy}m`);
+                
+                // Kiểm tra tọa độ hợp lệ (chỉ cần là số và khác 0)
+                if (typeof lat !== 'number' || typeof lng !== 'number') {
+                    console.warn("Invalid coordinates type");
+                    return;
+                }
+                if (lat === 0 && lng === 0) {
+                    console.warn("Zero coordinates, skip");
+                    return;
+                }
+                
+                // Ghi track nếu di chuyển đủ xa
                 if (lastTrackLat !== null && lastTrackLng !== null) {
                     const dist = haversine(lastTrackLat, lastTrackLng, lat, lng);
                     if (dist >= 15) {
-                        push(ref(db, 'tracks/' + myUsername + '/points'), { lat: lat, lng: lng, timestamp: serverTimestamp() }).catch(console.error);
+                        push(ref(db, 'tracks/' + myUsername + '/points'), {
+                            lat: lat,
+                            lng: lng,
+                            timestamp: serverTimestamp()
+                        }).catch(console.error);
+                        console.log(`Track saved, moved ${dist.toFixed(1)}m`);
                     }
                 }
                 lastTrackLat = lat;
                 lastTrackLng = lng;
-                const data = { lat: lat, lng: lng, name: myName, lastUpdate: Date.now() };
-                set(ref(db, 'officers/' + myUsername), data).catch(console.error);
-                allOfficers[myUsername] = data;
-                updateOfficerMarker(myUsername, data);
-                if (followMe && !userDragging && map) {
-                    map.setView([lat, lng]);
-                }
+                
+                const data = {
+                    lat: lat,
+                    lng: lng,
+                    name: myName,
+                    lastUpdate: Date.now(),
+                    lastSeen: Date.now()
+                };
+                
+                // Ghi lên Firebase và cập nhật marker
+                set(ref(db, 'officers/' + myUsername), data)
+                    .then(() => {
+                        console.log("✅ Location updated to Firebase");
+                        allOfficers[myUsername] = data;
+                        if (map && officerClusterGroup) {
+                            updateOfficerMarker(myUsername, data);
+                            console.log("✅ Marker updated on map");
+                        } else {
+                            console.warn("⚠️ Map or cluster not ready yet");
+                        }
+                        if (followMe && !userDragging && map) {
+                            map.setView([lat, lng]);
+                        }
+                    })
+                    .catch(err => console.error("Firebase set error:", err));
             },
-            (error) => console.error("GPS error:", error),
+            (error) => {
+                console.error("GPS error:", error);
+            },
             { enableHighAccuracy: true, maximumAge: 10000, timeout: 200000 }
         );
     } else {
         console.warn("Geolocation not supported");
     }
 
+    // ========== LOAD CACHE VÀ KHỞI TẠO OFFICERS ==========
     const hasCache = loadOfficersFromCache();
 
     for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
@@ -538,6 +585,7 @@
         saveOfficersToCache();
     }
 
+    // ========== REALTIME LISTENERS ==========
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -569,6 +617,7 @@
 
     onChildRemoved(officersRef, (snapshot) => {
         const id = snapshot.key;
+        console.warn("Officer removed from Firebase:", id);
         delete allOfficers[id];
         removeOfficerMarker(id);
         saveCacheAfterChange();
@@ -580,56 +629,7 @@
         }
     });
 
-    // ==================== MARKERS ====================
-    const markersRootRef = ref(db, 'markers');
-    onChildAdded(markersRootRef, (userSnapshot) => {
-        const userId = userSnapshot.key;
-        const userMarkersRef = ref(db, `markers/${userId}`);
-        onChildAdded(userMarkersRef, (markerSnapshot) => {
-            const point = markerSnapshot.val();
-            if (!point || !point.timestamp) return;
-            const markerId = markerSnapshot.key;
-            const fullId = `${userId}_${markerId}`;
-            const age = Date.now() - point.timestamp;
-            if (age > 24*60*60*1000) { remove(ref(db, `markers/${userId}/${markerId}`)); return; }
-            if (isValidVNCoordinate(point.lat, point.lng)) {
-                const marker = L.circleMarker([point.lat, point.lng], {
-                    radius: 6, color: '#ffaa00', fillColor: '#ffaa00', fillOpacity: 0.8, weight: 1,
-                    renderer: L.canvas()
-                }).addTo(map);
-                let popupContent = `<b>${point.created_by || 'Unknown'}</b><br>${point.note || ''}<br>${new Date(point.timestamp).toLocaleString()}`;
-                const canDelete = (point.created_by === myName) || (userRole === 'commander') || (userRole === 'admin');
-                if (canDelete) {
-                    popupContent += `<br><button class="delete-btn" data-fullid="${fullId}" data-userid="${userId}" data-markerid="${markerId}">🗑️ Xoá điểm</button>`;
-                }
-                marker.bindPopup(popupContent);
-                pointMarkers[fullId] = marker;
-            }
-        });
-        onChildRemoved(userMarkersRef, (markerSnapshot) => {
-            const markerId = markerSnapshot.key;
-            const fullId = `${userId}_${markerId}`;
-            if (pointMarkers[fullId]) {
-                map.removeLayer(pointMarkers[fullId]);
-                delete pointMarkers[fullId];
-            }
-        });
-    });
-
-    document.addEventListener('click', async (e) => {
-        if (e.target && e.target.classList.contains('delete-btn')) {
-            const fullId = e.target.getAttribute('data-fullid');
-            const userId = e.target.getAttribute('data-userid');
-            const markerId = e.target.getAttribute('data-markerid');
-            if (fullId && userId && markerId) {
-                if (confirm("Xóa điểm đánh dấu này?")) {
-                    await remove(ref(db, `markers/${userId}/${markerId}`));
-                }
-            }
-        }
-    });
-
-    // ==================== ALERTS ====================
+    // ==================== ALERTS (BÁO ĐỘNG) ====================
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
     const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
@@ -707,29 +707,19 @@
 
     // ==================== BROADCAST ====================
     const broadcastsRef = ref(db, 'broadcasts');
-    let lastBroadcastIds = new Set(JSON.parse(sessionStorage.getItem("playedBroadcasts") || "[]"));
+    let lastBroadcastIds = new Set();
     let isInitialLoad = true;
-
-    function savePlayedBroadcasts() {
-        sessionStorage.setItem("playedBroadcasts", JSON.stringify([...lastBroadcastIds]));
-    }
 
     onChildAdded(broadcastsRef, (snapshot) => {
         const broadcast = snapshot.val();
         const broadcastId = snapshot.key;
         if (!broadcast || !broadcast.text) return;
         if (lastBroadcastIds.has(broadcastId)) return;
-        if (isInitialLoad) {
-            lastBroadcastIds.add(broadcastId);
-            savePlayedBroadcasts();
-            return;
-        }
+        if (isInitialLoad) { lastBroadcastIds.add(broadcastId); return; }
         lastBroadcastIds.add(broadcastId);
-        savePlayedBroadcasts();
         if (lastBroadcastIds.size > 100) {
             const toDelete = [...lastBroadcastIds].slice(0, 50);
             toDelete.forEach(id => lastBroadcastIds.delete(id));
-            savePlayedBroadcasts();
         }
         const sender = broadcast.sender || broadcast.senderId || "Chỉ huy";
         const message = broadcast.text;
@@ -744,86 +734,18 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST (VIẾT LẠI THEO HƯỚNG FIREBASE LÀ NGUỒN SỰ THẬT) ====================
+    // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
-    // Lưu trữ các circle hiện tại, key = broadcastId
-    let areaCircles = {};
+    let activeBlinkIntervals = {};
 
-    // Hàm xóa tất cả circle hiện có
-    function removeAllAreaCircles() {
-        for (const id in areaCircles) {
-            if (areaCircles[id]) map.removeLayer(areaCircles[id]);
-            delete areaCircles[id];
-        }
-        areaCircles = {};
-    }
-
-    // Hàm tạo một circle mới (không nhấp nháy bằng interval, dùng CSS animation)
-    function createAreaCircle(id, data) {
-        const { lat, lng, radius = 500, text, sender } = data;
-        const circle = L.circle([lat, lng], {
-            radius: radius,
-            color: 'blue',
-            fillColor: '#3b82f6',
-            fillOpacity: 0.3,
-            weight: 3,
-            className: 'blink-circle'  // CSS animation nhấp nháy
-        }).addTo(map);
-        // Thêm popup
-        const senderName = sender || "Chỉ huy";
-        circle.bindPopup(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`);
-        areaCircles[id] = circle;
-        // Tự động xóa sau 10 giây (nhưng vẫn giữ trong Firebase? Theo yêu cầu, vòng tròn biến mất sau 10s nhưng không xóa khỏi DB.
-        // Ở đây ta chỉ xóa khỏi map sau 10s, nhưng nếu Firebase vẫn còn, nó sẽ được vẽ lại khi onValue chạy? Cần cân nhắc.
-        // Để đúng với logic "Firebase là nguồn sự thật", nếu muốn vòng tròn tự động biến mất sau 10s, ta cần xóa khỏi Firebase sau 10s.
-        // Nhưng yêu cầu ban đầu là vòng tròn nhấp nháy 10s rồi biến mất, không cần lưu lại. Vậy ta sẽ xóa khỏi Firebase sau 10s.
-        setTimeout(() => {
-            // Chỉ xóa nếu vòng tròn này vẫn còn trong areaCircles (chưa bị xóa bởi sự kiện khác)
-            if (areaCircles[id]) {
-                map.removeLayer(areaCircles[id]);
-                delete areaCircles[id];
-                // Xóa luôn dữ liệu trên Firebase để đồng bộ
-                remove(ref(db, 'area_broadcasts/' + id)).catch(console.error);
-            }
-        }, 10000);
-    }
-
-    // Hàm đồng bộ toàn bộ từ Firebase (dùng onValue)
-    function syncAreaBroadcasts(snapshot) {
-        const data = snapshot.val();
-        const newIds = new Set();
-        if (data && typeof data === 'object') {
-            for (const id in data) {
-                newIds.add(id);
-                // Nếu chưa có circle cho id này, tạo mới
-                if (!areaCircles[id]) {
-                    const broadcast = data[id];
-                    if (broadcast && broadcast.lat && broadcast.lng) {
-                        createAreaCircle(id, broadcast);
-                    }
-                }
-            }
-        }
-        // Xóa những circle có id không còn trong Firebase
-        for (const id in areaCircles) {
-            if (!newIds.has(id)) {
-                map.removeLayer(areaCircles[id]);
-                delete areaCircles[id];
-            }
-        }
-    }
-
-    // Đăng ký onValue để đồng bộ mỗi khi dữ liệu thay đổi
-    onValue(areaBroadcastsRef, (snapshot) => {
-        syncAreaBroadcasts(snapshot);
-    });
-
-    // Hàm xóa toàn bộ cảnh báo khu vực (gọi từ nút)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
             await remove(areaBroadcastsRef);
-            // Không cần xóa thủ công map vì onValue sẽ tự đồng bộ
+            for (const intervalId in activeBlinkIntervals) {
+                clearInterval(activeBlinkIntervals[intervalId]);
+                delete activeBlinkIntervals[intervalId];
+            }
             alert("Đã xóa tất cả cảnh báo khu vực.");
         } catch (error) {
             console.error("Lỗi khi xóa area broadcasts:", error);
@@ -850,6 +772,52 @@
         if (dialog) dialog.remove();
         if (navigator.vibrate) navigator.vibrate(100);
     }
+
+    function handleAreaBroadcast(data) {
+        if (!data || !data.lat || !data.lng) return;
+        const { lat, lng, radius = 500, text, sender } = data;
+        const senderName = sender || "Chỉ huy";
+        const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
+
+        const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
+        let visible = true;
+        const blinkInterval = setInterval(() => {
+            if (!map) { clearInterval(blinkInterval); return; }
+            if (visible) map.removeLayer(circle);
+            else circle.addTo(map);
+            visible = !visible;
+        }, 600);
+        const intervalId = Date.now() + Math.random();
+        activeBlinkIntervals[intervalId] = blinkInterval;
+        setTimeout(() => {
+            clearInterval(blinkInterval);
+            if (map && circle) circle.addTo(map);
+            delete activeBlinkIntervals[intervalId];
+        }, 10000);
+
+        if (map) {
+            L.popup().setLatLng([lat, lng]).setContent(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`).openOn(map);
+            setTimeout(() => map.closePopup(), 8000);
+        }
+
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(messageText);
+            utterance.lang = "vi-VN";
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            const voices = window.speechSynthesis.getVoices();
+            const viVoice = voices.find(v => v.lang === "vi-VN");
+            if (viVoice) utterance.voice = viVoice;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    onChildAdded(areaBroadcastsRef, (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        handleAreaBroadcast(data);
+    });
 
     // ==================== DRAWING TOOLBAR ====================
     if (userRole === 'commander' || userRole === 'admin') {
@@ -914,12 +882,14 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-        const clearAreaBtn = document.getElementById('clear-all-area');
-        if (clearAreaBtn) {
-            clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
-        } else {
-            console.warn("Không tìm thấy nút clear-all-area");
-        }
+        setTimeout(() => {
+            const clearAreaBtn = document.getElementById('clear-all-area');
+            if (clearAreaBtn) {
+                clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
+            } else {
+                console.warn("Không tìm thấy nút clear-all-area");
+            }
+        }, 500);
     }
 
     // ==================== OFFICER ARROW ====================
