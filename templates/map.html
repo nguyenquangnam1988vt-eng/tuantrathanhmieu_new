@@ -51,7 +51,7 @@
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             z-index: 2000;
-            width: 280px;
+            width: 300px;
             padding: 16px;
             font-family: sans-serif;
         }
@@ -593,6 +593,264 @@
         console.log("Broadcast listener ready");
     }, 2000);
 
+    // ==================== AREA BROADCAST (PHÁT LỆNH KHU VỰC) ====================
+    const areaBroadcastsRef = ref(db, 'area_broadcasts');
+    let activeBlinkIntervals = {};
+
+    function sendAreaBroadcast(lat, lng, note) {
+        const data = {
+            text: note || "",
+            lat: lat,
+            lng: lng,
+            radius: 500, // mét
+            type: "area_alert",
+            sender: myName,
+            senderId: myUsername,
+            timestamp: Date.now()
+        };
+        push(areaBroadcastsRef, data).catch(console.error);
+        console.log("📢 Đã phát lệnh khu vực:", data);
+        // Đóng popup (nếu có)
+        const overlay = document.getElementById('dialog-overlay');
+        if (overlay) overlay.remove();
+        const dialog = document.querySelector('.custom-dialog');
+        if (dialog) dialog.remove();
+        // Thông báo nhẹ
+        if (navigator.vibrate) navigator.vibrate(100);
+    }
+
+    function handleAreaBroadcast(data) {
+        if (!data || !data.lat || !data.lng) return;
+        const { lat, lng, radius = 500, text, sender } = data;
+        const senderName = sender || "Chỉ huy";
+        const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
+
+        // Vẽ vòng tròn nhấp nháy
+        const circle = L.circle([lat, lng], {
+            radius: radius,
+            color: 'blue',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.3,
+            weight: 3
+        }).addTo(map);
+        
+        let visible = true;
+        const blinkInterval = setInterval(() => {
+            if (!map) {
+                clearInterval(blinkInterval);
+                return;
+            }
+            if (visible) {
+                map.removeLayer(circle);
+            } else {
+                circle.addTo(map);
+            }
+            visible = !visible;
+        }, 600);
+        
+        // Lưu interval để có thể dừng sau 10s
+        const intervalId = Date.now() + Math.random();
+        activeBlinkIntervals[intervalId] = blinkInterval;
+        setTimeout(() => {
+            clearInterval(blinkInterval);
+            if (map && circle) circle.addTo(map);
+            delete activeBlinkIntervals[intervalId];
+        }, 10000);
+        
+        // Hiển thị popup thông báo
+        if (map) {
+            const center = map.getCenter();
+            L.popup()
+                .setLatLng([lat, lng])
+                .setContent(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`)
+                .openOn(map);
+            setTimeout(() => map.closePopup(), 8000);
+        }
+        
+        // Phát âm thanh
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(messageText);
+            utterance.lang = "vi-VN";
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            const voices = window.speechSynthesis.getVoices();
+            const viVoice = voices.find(v => v.lang === "vi-VN");
+            if (viVoice) utterance.voice = viVoice;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    onChildAdded(areaBroadcastsRef, (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        // Bỏ qua nếu là tin nhắn của chính mình (tùy chọn)
+        // if (data.senderId === myUsername) return;
+        handleAreaBroadcast(data);
+    });
+
+    // ==================== DIALOG THÊM ĐIỂM (đã sửa thêm nút Phát lệnh khu vực) ====================
+    function showPointDialog(latlng) {
+        if (drawingMode || arrowMode) return;
+        const oldOverlay = document.getElementById('dialog-overlay');
+        if (oldOverlay) oldOverlay.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'dialog-overlay';
+        overlay.className = 'dialog-overlay';
+        document.body.appendChild(overlay);
+        const dialog = document.createElement('div');
+        dialog.className = 'custom-dialog';
+        
+        if (userRole === 'officer') {
+            dialog.innerHTML = `
+                <h4>📍 Đánh dấu điểm</h4>
+                <input type="text" id="point-note" placeholder="Ghi chú (bắt buộc)" />
+                <div style="margin-top: 12px; display: flex; gap: 8px;">
+                    <button id="dialog-ok" style="background:#10b981;">✅ Xác nhận</button>
+                    <button id="dialog-cancel" style="background:#6b7280;">❌ Hủy</button>
+                </div>
+            `;
+        } else {
+            // commander hoặc admin: thêm nút Phát lệnh khu vực
+            dialog.innerHTML = `
+                <h4>📍 Tùy chọn tại điểm</h4>
+                <input type="text" id="point-note" placeholder="Ghi chú (bắt buộc nếu đánh dấu điểm)" />
+                <select id="officer-select">
+                    <option value="">-- Chọn cán bộ để ra lệnh (không chọn = đánh dấu điểm) --</option>
+                </select>
+                <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
+                    <button id="dialog-ok" style="background:#10b981;">✅ Xác nhận</button>
+                    <button id="dialog-area" style="background:#2563eb;">📢 Phát lệnh khu vực</button>
+                    <button id="dialog-cancel" style="background:#6b7280;">❌ Hủy</button>
+                </div>
+            `;
+        }
+        document.body.appendChild(dialog);
+        
+        if (userRole !== 'officer') {
+            const select = dialog.querySelector('#officer-select');
+            if (select) {
+                for (const [uid, officer] of Object.entries(allOfficers)) {
+                    if (uid !== myUsername) {
+                        const name = officer.name || uid;
+                        const option = document.createElement('option');
+                        option.value = uid;
+                        option.textContent = name;
+                        select.appendChild(option);
+                    }
+                }
+            }
+        }
+        
+        const okBtn = dialog.querySelector('#dialog-ok');
+        const cancelBtn = dialog.querySelector('#dialog-cancel');
+        const areaBtn = dialog.querySelector('#dialog-area');
+        const noteInput = dialog.querySelector('#point-note');
+        
+        if (okBtn) {
+            okBtn.onclick = () => {
+                const note = noteInput ? noteInput.value.trim() : '';
+                if (!note) {
+                    alert("Vui lòng nhập ghi chú.");
+                    return;
+                }
+                if (userRole === 'officer') {
+                    push(ref(db, 'markers/' + myUsername), {
+                        created_by: myName,
+                        lat: latlng.lat,
+                        lng: latlng.lng,
+                        note: note,
+                        timestamp: Date.now()
+                    });
+                } else {
+                    const selectedOfficerUid = document.getElementById('officer-select')?.value;
+                    if (!selectedOfficerUid) {
+                        push(ref(db, 'markers/' + myUsername), {
+                            created_by: myName,
+                            lat: latlng.lat,
+                            lng: latlng.lng,
+                            note: note,
+                            timestamp: Date.now()
+                        });
+                    } else {
+                        const startOfficer = allOfficers[selectedOfficerUid];
+                        if (!startOfficer || !isValidVNCoordinate(startOfficer.lat, startOfficer.lng)) {
+                            alert("Không tìm thấy vị trí cán bộ này.");
+                            dialog.remove();
+                            overlay.remove();
+                            return;
+                        }
+                        const orderData = {
+                            officerId: selectedOfficerUid,
+                            fromLat: startOfficer.lat,
+                            fromLng: startOfficer.lng,
+                            toLat: latlng.lat,
+                            toLng: latlng.lng,
+                            commanderName: myName,
+                            commanderId: myUsername,
+                            timestamp: Date.now(),
+                            status: 'active',
+                            note: note
+                        };
+                        push(ref(db, 'move_orders'), orderData);
+                        const selectName = document.querySelector('#officer-select option:checked')?.text;
+                        push(ref(db, 'logs'), {
+                            commander: myName,
+                            commanderId: myUsername,
+                            targetId: selectedOfficerUid,
+                            targetName: selectName,
+                            lat: latlng.lat,
+                            lng: latlng.lng,
+                            time: Date.now(),
+                            action: 'move_order',
+                            note: note
+                        });
+                        const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
+                        tempMarker.bindPopup(`📍 Đã ra lệnh cho ${selectName}`).openPopup();
+                        setTimeout(() => map.removeLayer(tempMarker), 5000);
+                    }
+                }
+                dialog.remove();
+                overlay.remove();
+            };
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.onclick = () => {
+                dialog.remove();
+                overlay.remove();
+            };
+        }
+        
+        if (areaBtn) {
+            areaBtn.onclick = () => {
+                const note = noteInput ? noteInput.value.trim() : '';
+                sendAreaBroadcast(latlng.lat, latlng.lng, note);
+                dialog.remove();
+                overlay.remove();
+            };
+        }
+    }
+
+    // ==================== GẮN SỰ KIỆN CHO MAP ====================
+    map.on('contextmenu', (e) => {
+        if (selectionMode || drawingMode || arrowMode) return;
+        e.originalEvent.preventDefault();
+        showPointDialog(e.latlng);
+    });
+    let touchTimer = null;
+    map.on('touchstart', (e) => {
+        if (selectionMode || drawingMode || arrowMode) return;
+        const touch = e.originalEvent.touches[0];
+        const latlng = map.mouseEventToLatLng(touch);
+        touchTimer = setTimeout(() => {
+            showPointDialog(latlng);
+        }, 800);
+    });
+    map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
+    map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
+
+    // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
     let isLocked = false;
@@ -609,6 +867,7 @@
         }
     };
 
+    // ==================== NÚT FOLLOW ME ====================
     const followBtn = document.getElementById("followBtn");
     followBtn.onclick = () => {
         followMe = !followMe;
