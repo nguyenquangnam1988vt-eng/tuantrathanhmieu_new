@@ -357,11 +357,9 @@
             map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
                 .setView([16.047079, 108.206230], 6);
         }
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            updateWhenZooming: false
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 20
         }).addTo(map);
         officerClusterGroup = L.markerClusterGroup({
             chunkedLoading: true,
