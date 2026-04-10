@@ -393,6 +393,31 @@ def main():
                         else:
                             st.info("Không có user nào")
 
+    # ==================== BROADCAST (PHÁT THANH CHỈ HUY) ====================
+    if user_role in ["commander", "admin"]:
+        st.sidebar.markdown('<div class="sidebar-group"><h3>📢 PHÁT THANH CHỈ HUY</h3></div>', unsafe_allow_html=True)
+        with st.sidebar:
+            st.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
+            broadcast_text = st.text_area("Nhập thông báo", placeholder="Ví dụ: Tất cả cán bộ tập trung tại điểm A!", height=100)
+            if st.button("📢 Phát thanh toàn hệ thống", key="broadcast_btn"):
+                if broadcast_text.strip():
+                    if len(broadcast_text) > 300:
+                        st.warning("Thông báo quá dài (tối đa 300 ký tự)")
+                    else:
+                        broadcast_data = {
+                            "text": broadcast_text.strip(),
+                            "sender": name,
+                            "senderId": username,
+                            "timestamp": int(time.time() * 1000),
+                            "role": user_role
+                        }
+                        db.child("broadcasts").push(broadcast_data)
+                        st.success("Đã gửi thông báo đến tất cả thiết bị!")
+                        logger.info(f"Broadcast from {username}: {broadcast_text}")
+                else:
+                    st.warning("Vui lòng nhập nội dung thông báo")
+            st.markdown('</div>', unsafe_allow_html=True)
+
     # ==================== LỊCH SỬ DI CHUYỂN (CHECKBOX TRACK) ====================
     st.sidebar.markdown('<div class="sidebar-group"><h3>🗺️ LỊCH SỬ DI CHUYỂN</h3></div>', unsafe_allow_html=True)
     if 'show_tracks' not in st.session_state:
