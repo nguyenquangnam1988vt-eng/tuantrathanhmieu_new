@@ -494,7 +494,10 @@
             (position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
-                if (!isValidVNCoordinate(lat, lng)) return;
+                if (!isValidVNCoordinate(lat, lng)) {
+                    console.warn("GPS sai, bỏ qua:", lat, lng);
+                    return; // KHÔNG ghi đè dữ liệu cũ
+                }
                 if (lastTrackLat !== null && lastTrackLng !== null) {
                     const dist = haversine(lastTrackLat, lastTrackLng, lat, lng);
                     if (dist >= 15) {
