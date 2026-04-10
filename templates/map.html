@@ -112,6 +112,24 @@
         }
         #followBtn.active { background: #ef4444; }
         #followBtn:active { transform: scale(0.96); }
+        /* Toast thông báo bật âm thanh */
+        .audio-toast {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 30px;
+            font-size: 14px;
+            text-align: center;
+            z-index: 10002;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+            transition: opacity 0.5s;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -119,6 +137,7 @@
 <button id="lockBtn">🔒 Khóa</button>
 <div id="lockOverlay"><div>🔒 Đã khóa màn hình<br><small>Nhấn nút góc phải dưới để mở khóa</small></div></div>
 <button id="followBtn" class="active">🎯 Bám theo tôi</button>
+<div id="audioToast" class="audio-toast" style="opacity:0; visibility:hidden;">🔊 Chạm vào màn hình để bật âm thanh</div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -181,8 +200,81 @@
     let drawingLayers = {};
     let userDragging = false;
     let followMe = true;
+    let audioReady = false;
+    let pendingBroadcasts = [];
 
-    // Hàm lưu cache
+    // Toast
+    const toast = document.getElementById('audioToast');
+    function showAudioToast() {
+        if (!audioReady) {
+            toast.style.visibility = 'visible';
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                if (!audioReady) {
+                    toast.style.opacity = '0';
+                    setTimeout(() => toast.style.visibility = 'hidden', 500);
+                }
+            }, 5000);
+        }
+    }
+    showAudioToast();
+
+    function enableAudio() {
+        if (audioReady) return;
+        audioReady = true;
+        toast.style.opacity = '0';
+        setTimeout(() => toast.style.visibility = 'hidden', 500);
+        if (window.AudioContext || window.webkitAudioContext) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const silent = audioCtx.createBufferSource();
+            silent.buffer = audioCtx.createBuffer(1, 1, 22050);
+            silent.connect(audioCtx.destination);
+            silent.start();
+            audioCtx.resume().then(() => console.log("AudioContext resumed"));
+        }
+        if (window.speechSynthesis) {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.lang = "vi-VN";
+            window.speechSynthesis.speak(dummy);
+        }
+        if (alertSound) {
+            alertSound.volume = 0;
+            alertSound.play().then(() => {
+                alertSound.pause();
+                alertSound.currentTime = 0;
+                alertSound.volume = 1;
+            }).catch(e => console.log("Alert sound activation failed", e));
+        }
+        if (pendingBroadcasts.length > 0) {
+            console.log(`Phát lại ${pendingBroadcasts.length} broadcast đã lưu`);
+            pendingBroadcasts.forEach(b => speakBroadcast(b.message, b.sender));
+            pendingBroadcasts = [];
+        }
+        console.log("Audio enabled");
+    }
+    document.addEventListener('touchstart', enableAudio, { once: true });
+    document.addEventListener('click', enableAudio, { once: true });
+
+    function speakBroadcast(message, sender) {
+        if (!audioReady) {
+            pendingBroadcasts.push({ message, sender });
+            console.log("Broadcast lưu lại, sẽ phát sau khi kích hoạt âm thanh");
+            return;
+        }
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const fullMessage = `Thông báo từ ${sender}. ${message}`;
+        const utterance = new SpeechSynthesisUtterance(fullMessage);
+        utterance.lang = "vi-VN";
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        const voices = window.speechSynthesis.getVoices();
+        const viVoice = voices.find(v => v.lang === "vi-VN");
+        if (viVoice) utterance.voice = viVoice;
+        window.speechSynthesis.speak(utterance);
+    }
+
     function saveOfficersToCache() {
         try { localStorage.setItem("cached_officers", JSON.stringify(allOfficers)); } catch(e) { console.warn("Cache save failed", e); }
     }
@@ -276,7 +368,7 @@
         return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
     }
 
-    function initAudio() {
+    function initAudioAlert() {
         if (alertSound) return;
         alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
         alertSound.preload = "auto";
@@ -387,7 +479,7 @@
     }
 
     initMap();
-    initAudio();
+    initAudioAlert();
     document.addEventListener("click", () => {
         if (!audioActivated && alertSound) {
             alertSound.load();
@@ -481,7 +573,7 @@
         }
     });
 
-    // ==================== ALERTS (BÁO ĐỘNG) ====================
+    // ==================== ALERTS ====================
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
     const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
@@ -523,14 +615,11 @@
         if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
             playedAlerts.add(id);
             savePlayedAlerts();
-            // Rung máy
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-            // Phát âm thanh
             if (audioActivated && alertSound) {
                 alertSound.currentTime = 0;
                 alertSound.play().catch(() => {});
             }
-            // Fly to
             if (!map._animatingZoom && !userDragging) {
                 map.flyTo([alert.lat, alert.lng], 17, { animate: true, duration: 1.5 });
             }
@@ -565,21 +654,6 @@
     let lastBroadcastIds = new Set();
     let isInitialLoad = true;
 
-    function speakBroadcast(message, sender) {
-        if (!window.speechSynthesis) return;
-        window.speechSynthesis.cancel();
-        const fullMessage = `Thông báo từ ${sender}. ${message}`;
-        const utterance = new SpeechSynthesisUtterance(fullMessage);
-        utterance.lang = "vi-VN";
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        const voices = window.speechSynthesis.getVoices();
-        const viVoice = voices.find(v => v.lang === "vi-VN");
-        if (viVoice) utterance.voice = viVoice;
-        window.speechSynthesis.speak(utterance);
-    }
-
     onChildAdded(broadcastsRef, (snapshot) => {
         const broadcast = snapshot.val();
         const broadcastId = snapshot.key;
@@ -604,20 +678,16 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST (PHÁT LỆNH KHU VỰC) ====================
+    // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
     let activeBlinkIntervals = {};
 
+    // 🔥 HÀM XÓA TOÀN BỘ CẢNH BÁO KHU VỰC (SỬA LỖI)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
-            const snapshot = await get(areaBroadcastsRef);
-            const data = snapshot.val();
-            if (data) {
-                for (const key in data) {
-                    await remove(ref(db, 'area_broadcasts/' + key));
-                }
-            }
+            await remove(areaBroadcastsRef); // xóa toàn bộ node
+            // dừng tất cả vòng tròn nhấp nháy
             for (const intervalId in activeBlinkIntervals) {
                 clearInterval(activeBlinkIntervals[intervalId]);
                 delete activeBlinkIntervals[intervalId];
@@ -758,8 +828,15 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-        const clearAreaBtn = document.getElementById('clear-all-area');
-        if (clearAreaBtn) clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
+        // 🔥 Gắn sự kiện cho nút xóa area broadcasts (đảm bảo DOM đã render)
+        setTimeout(() => {
+            const clearAreaBtn = document.getElementById('clear-all-area');
+            if (clearAreaBtn) {
+                clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
+            } else {
+                console.warn("Không tìm thấy nút clear-all-area");
+            }
+        }, 500);
     }
 
     // ==================== OFFICER ARROW ====================
@@ -1084,47 +1161,6 @@
         }
         if (navigator.vibrate) navigator.vibrate(50);
     };
-
-    // ==================== FIX AUDIO AUTOPLAY TRÊN MOBILE ====================
-    let audioContextActivated = false;
-    function activateAudioOnFirstTouch() {
-        if (audioContextActivated) return;
-        audioContextActivated = true;
-        
-        // 1. Đánh thức Web Audio API
-        if (window.AudioContext || window.webkitAudioContext) {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const silent = audioCtx.createBufferSource();
-            silent.buffer = audioCtx.createBuffer(1, 1, 22050);
-            silent.connect(audioCtx.destination);
-            silent.start();
-            audioCtx.resume().then(() => console.log("AudioContext resumed"));
-        }
-        
-        // 2. Đánh thức SpeechSynthesis (đọc văn bản)
-        if (window.speechSynthesis) {
-            const dummy = new SpeechSynthesisUtterance("");
-            dummy.lang = "vi-VN";
-            window.speechSynthesis.speak(dummy);
-        }
-        
-        // 3. Đánh thức alertSound
-        if (alertSound) {
-            alertSound.volume = 0;
-            alertSound.play().then(() => {
-                alertSound.pause();
-                alertSound.currentTime = 0;
-                alertSound.volume = 1;
-            }).catch(e => console.log("Audio activation failed", e));
-        }
-        
-        console.log("Audio activated on first touch");
-        document.removeEventListener('touchstart', activateAudioOnFirstTouch);
-        document.removeEventListener('click', activateAudioOnFirstTouch);
-    }
-    
-    document.addEventListener('touchstart', activateAudioOnFirstTouch, { once: true });
-    document.addEventListener('click', activateAudioOnFirstTouch, { once: true });
 </script>
 </body>
 </html>
