@@ -182,10 +182,9 @@
     let userDragging = false;
     let followMe = true;
 
+    // Hàm lưu cache
     function saveOfficersToCache() {
-        try {
-            localStorage.setItem("cached_officers", JSON.stringify(allOfficers));
-        } catch(e) { console.warn("Cache save failed", e); }
+        try { localStorage.setItem("cached_officers", JSON.stringify(allOfficers)); } catch(e) { console.warn("Cache save failed", e); }
     }
     function loadOfficersFromCache() {
         try {
@@ -240,22 +239,10 @@
         if (officerMarkers[uid]) {
             officerMarkers[uid].setLatLng(latlng);
             officerMarkers[uid].setIcon(createOfficerIcon(color));
-            officerMarkers[uid].bindTooltip(tooltipHTML, {
-                permanent: true,
-                direction: 'top',
-                offset: [0, -12],
-                interactive: true,
-                className: 'custom-tooltip'
-            });
+            officerMarkers[uid].bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
         } else {
             const marker = L.marker(latlng, { icon: createOfficerIcon(color) });
-            marker.bindTooltip(tooltipHTML, {
-                permanent: true,
-                direction: 'top',
-                offset: [0, -12],
-                interactive: true,
-                className: 'custom-tooltip'
-            });
+            marker.bindTooltip(tooltipHTML, { permanent: true, direction: 'top', offset: [0, -12], interactive: true, className: 'custom-tooltip' });
             officerClusterGroup.addLayer(marker);
             officerMarkers[uid] = marker;
         }
@@ -341,11 +328,9 @@
             map = L.map('map', { preferCanvas: true, zoomAnimation: false, fadeAnimation: false, inertia: false })
                 .setView([16.047079, 108.206230], 6);
         }
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            updateWhenZooming: false
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 20
         }).addTo(map);
         officerClusterGroup = L.markerClusterGroup({
             chunkedLoading: true,
@@ -496,6 +481,85 @@
         }
     });
 
+    // ==================== ALERTS (BÁO ĐỘNG) ====================
+    const alertsRef = ref(db, 'alerts');
+    const oneDayAgo = Date.now() - 24*60*60*1000;
+    const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
+    function savePlayedAlerts() { sessionStorage.setItem("playedAlerts", JSON.stringify([...playedAlerts])); }
+
+    function getAlertPopupContent(alert) {
+        if (!alert || !alert.name) return "Báo động không hợp lệ";
+        let distanceText = "";
+        const myPos = allOfficers[myUsername];
+        if (myPos && isValidVNCoordinate(myPos.lat, myPos.lng)) {
+            const distance = haversine(myPos.lat, myPos.lng, alert.lat, alert.lng);
+            distanceText = `<br>Khoảng cách: ${(distance/1000).toFixed(2)} km`;
+        }
+        let statusText = "";
+        if (alert.status === "pending") statusText = "🟥 Chưa xử lý";
+        else if (alert.status === "accepted") statusText = `🟨 Đang xử lý bởi ${alert.accepted_by || ""}`;
+        else if (alert.status === "resolved") statusText = "🟩 Đã xong";
+        else if (alert.status === "expired") statusText = "⏰ Hết hạn";
+        else statusText = "Không rõ";
+        return `🚨 <b>Báo động từ ${alert.name}</b><br> Trạng thái: ${statusText} ${distanceText}<br> ${new Date(alert.timestamp).toLocaleString()}`;
+    }
+
+    const alertIcon = L.divIcon({ className: '', html: '<div class="alert-marker"></div>', iconSize: [24, 24], popupAnchor: [0, -12] });
+
+    onChildAdded(alertsRef, (data) => {
+        const alert = data.val();
+        const id = data.key;
+        if (!alert || !alert.timestamp || alert.timestamp < oneDayAgo) return;
+        if (!isValidVNCoordinate(alert.lat, alert.lng)) return;
+        if (!alertMarkers[id]) {
+            const marker = L.marker([alert.lat, alert.lng], { icon: alertIcon })
+                .addTo(map)
+                .bindPopup(getAlertPopupContent(alert));
+            alertMarkers[id] = marker;
+        }
+        const now = Date.now();
+        const isMyAlert = (alert.created_by === myUsername);
+        const isRecent = (now - alert.timestamp) < 15000;
+        if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
+            playedAlerts.add(id);
+            savePlayedAlerts();
+            // Rung máy
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            // Phát âm thanh
+            if (audioActivated && alertSound) {
+                alertSound.currentTime = 0;
+                alertSound.play().catch(() => {});
+            }
+            // Fly to
+            if (!map._animatingZoom && !userDragging) {
+                map.flyTo([alert.lat, alert.lng], 17, { animate: true, duration: 1.5 });
+            }
+            setTimeout(() => {
+                if (alertSound && !alertSound.paused) { alertSound.pause(); alertSound.currentTime = 0; }
+            }, 15000);
+            alertTimeouts[id] = setTimeout(() => {
+                get(ref(db, 'alerts/' + id)).then((snapshot) => {
+                    const currentAlert = snapshot.val();
+                    if (currentAlert && currentAlert.status === 'pending') {
+                        removeAlertMarker(id);
+                        update(ref(db, 'alerts/' + id), { status: 'expired' });
+                    }
+                });
+            }, 20000);
+        }
+    });
+
+    onChildChanged(alertsRef, (data) => {
+        const alert = data.val();
+        const id = data.key;
+        if (!alert) return;
+        if (alertMarkers[id]) {
+            alertMarkers[id].setPopupContent(getAlertPopupContent(alert));
+            if (["accepted", "resolved", "expired"].includes(alert.status)) removeAlertMarker(id);
+        }
+    });
+    onChildRemoved(alertsRef, (data) => { const id = data.key; removeAlertMarker(id); });
+
     // ==================== BROADCAST ====================
     const broadcastsRef = ref(db, 'broadcasts');
     let lastBroadcastIds = new Set();
@@ -540,11 +604,10 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST ====================
+    // ==================== AREA BROADCAST (PHÁT LỆNH KHU VỰC) ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
     let activeBlinkIntervals = {};
 
-    // Hàm xóa tất cả cảnh báo khu vực (dành cho commander/admin)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
@@ -555,7 +618,6 @@
                     await remove(ref(db, 'area_broadcasts/' + key));
                 }
             }
-            // Xóa các vòng tròn nhấp nháy đang hoạt động
             for (const intervalId in activeBlinkIntervals) {
                 clearInterval(activeBlinkIntervals[intervalId]);
                 delete activeBlinkIntervals[intervalId];
@@ -633,7 +695,7 @@
         handleAreaBroadcast(data);
     });
 
-    // ==================== DRAWING TOOLBAR (COMMANDER/ADMIN) ====================
+    // ==================== DRAWING TOOLBAR ====================
     if (userRole === 'commander' || userRole === 'admin') {
         const toolbar = L.control({ position: 'topright' });
         toolbar.onAdd = () => {
@@ -674,9 +736,7 @@
         }
         if (drawFinish) {
             drawFinish.addEventListener('click', () => {
-                if (drawingMode && tempPoints.length >= 2) {
-                    saveDrawing();
-                }
+                if (drawingMode && tempPoints.length >= 2) { saveDrawing(); }
                 drawingMode = false;
                 if (drawToggle) drawToggle.style.background = '';
                 drawFinish.style.display = 'none';
@@ -702,7 +762,7 @@
         if (clearAreaBtn) clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
     }
 
-    // ==================== OFFICER ARROW TOOLBAR ====================
+    // ==================== OFFICER ARROW ====================
     if (userRole === 'officer') {
         const arrowToolbar = L.control({ position: 'topright' });
         arrowToolbar.onAdd = () => {
@@ -1024,6 +1084,47 @@
         }
         if (navigator.vibrate) navigator.vibrate(50);
     };
+
+    // ==================== FIX AUDIO AUTOPLAY TRÊN MOBILE ====================
+    let audioContextActivated = false;
+    function activateAudioOnFirstTouch() {
+        if (audioContextActivated) return;
+        audioContextActivated = true;
+        
+        // 1. Đánh thức Web Audio API
+        if (window.AudioContext || window.webkitAudioContext) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const silent = audioCtx.createBufferSource();
+            silent.buffer = audioCtx.createBuffer(1, 1, 22050);
+            silent.connect(audioCtx.destination);
+            silent.start();
+            audioCtx.resume().then(() => console.log("AudioContext resumed"));
+        }
+        
+        // 2. Đánh thức SpeechSynthesis (đọc văn bản)
+        if (window.speechSynthesis) {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.lang = "vi-VN";
+            window.speechSynthesis.speak(dummy);
+        }
+        
+        // 3. Đánh thức alertSound
+        if (alertSound) {
+            alertSound.volume = 0;
+            alertSound.play().then(() => {
+                alertSound.pause();
+                alertSound.currentTime = 0;
+                alertSound.volume = 1;
+            }).catch(e => console.log("Audio activation failed", e));
+        }
+        
+        console.log("Audio activated on first touch");
+        document.removeEventListener('touchstart', activateAudioOnFirstTouch);
+        document.removeEventListener('click', activateAudioOnFirstTouch);
+    }
+    
+    document.addEventListener('touchstart', activateAudioOnFirstTouch, { once: true });
+    document.addEventListener('click', activateAudioOnFirstTouch, { once: true });
 </script>
 </body>
 </html>
