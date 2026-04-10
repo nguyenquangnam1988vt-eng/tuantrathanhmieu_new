@@ -125,7 +125,7 @@
     import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onValue, query, limitToLast, update, push, onDisconnect, get, serverTimestamp, off, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
     import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging.js";
 
-    // ========== DỮ LIỆU TỪ PYTHON (placeholder) ==========
+    // ========== DỮ LIỆU TỪ PYTHON (đã được thay thế) ==========
     const firebaseConfig = {{ firebase_config }};
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
@@ -141,7 +141,6 @@
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
 
-    // Hàm an toàn xử lý object
     function safeObject(v) {
         return (typeof v === "object" && v !== null) ? v : {};
     }
@@ -152,7 +151,6 @@
     const safeUserColors = safeObject(userColors);
     if (typeof userRole !== 'string') userRole = 'officer';
 
-    // ========== BIẾN TOÀN CỤC ==========
     let map = null;
     let officerClusterGroup = null;
     let allOfficers = {};
@@ -185,7 +183,6 @@
     let userDragging = false;
     let followMe = true;
 
-    // ========== HÀM TIỆN ÍCH ==========
     function isValidVNCoordinate(lat, lng) {
         if (typeof lat !== 'number' || typeof lng !== 'number') return false;
         if (lat === 0 && lng === 0) return false;
@@ -350,7 +347,6 @@
         }
     }
 
-    // NoSleep
     let noSleep = new NoSleep();
     function enableNoSleepOnce() {
         try { noSleep.enable(); console.log("NoSleep enabled"); } catch(e) { console.warn("NoSleep failed:", e); }
@@ -358,7 +354,6 @@
     document.addEventListener("click", enableNoSleepOnce, { once: true });
     document.addEventListener("touchstart", enableNoSleepOnce, { once: true });
 
-    // FCM foreground
     if (fcmVapidKey !== "") {
         onMessage(messaging, payload => {
             if (Notification.permission === 'granted') {
@@ -373,7 +368,6 @@
         document.body.addEventListener('click', requestNotificationPermission, { once: true });
     }
 
-    // Khởi tạo map, audio
     initMap();
     initAudio();
     document.addEventListener("click", () => {
@@ -383,7 +377,6 @@
         }
     });
 
-    // === GỬI VỊ TRÍ LÊN FIREBASE VÀ FOLLOW ME ===
     let lastTrackLat = null;
     let lastTrackLng = null;
     if (navigator.geolocation) {
@@ -415,7 +408,6 @@
         console.warn("Geolocation not supported");
     }
 
-    // Cache và khởi tạo officers từ cache/initial
     (function loadOfficersFromCache() {
         try {
             const cached = localStorage.getItem("cached_officers");
@@ -443,7 +435,6 @@
         try { localStorage.setItem("cached_officers", JSON.stringify(allOfficers)); } catch(e) { console.warn("Cache save failed", e); }
     }
 
-    // Real-time listeners (chỉ đăng ký một lần)
     if (!window.firebaseInitialized) {
         window.firebaseInitialized = true;
 
@@ -489,7 +480,7 @@
             }
         });
 
-        // ==================== BROADCAST (PHÁT THANH TOÀN HỆ THỐNG) ====================
+        // ==================== BROADCAST ====================
         const broadcastsRef = ref(db, 'broadcasts');
         let lastBroadcastIds = new Set();
         let isInitialLoad = true;
@@ -536,7 +527,7 @@
 
         setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-        // ==================== AREA BROADCAST (PHÁT LỆNH KHU VỰC) ====================
+        // ==================== AREA BROADCAST ====================
         const areaBroadcastsRef = ref(db, 'area_broadcasts');
         let activeBlinkIntervals = {};
 
@@ -607,7 +598,7 @@
         });
     }
 
-    // ==================== DIALOG THÊM ĐIỂM ====================
+    // ==================== DIALOG ====================
     function showPointDialog(latlng) {
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
@@ -723,7 +714,6 @@
         }
     }
 
-    // Gắn sự kiện map (sau khi map đã khởi tạo)
     map.on('contextmenu', (e) => {
         if (selectionMode || drawingMode || arrowMode) return;
         e.originalEvent.preventDefault();
@@ -739,7 +729,6 @@
     map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
     map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
 
-    // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
     let isLocked = false;
@@ -756,7 +745,6 @@
         }
     };
 
-    // ==================== NÚT FOLLOW ME ====================
     const followBtn = document.getElementById("followBtn");
     followBtn.onclick = () => {
         followMe = !followMe;
