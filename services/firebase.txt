@@ -1,1 +1,214 @@
+import time
+import streamlit as st
+from streamlit_authenticator.utilities.hasher import Hasher
+from utils.helpers import is_valid_coordinate
 
+db = None
+
+def init_db():
+    global db
+    if db is None:
+        from config import init_firebase
+        firebase = init_firebase()
+        db = firebase.database()
+    return db
+
+def load_credentials_from_firebase():
+    db = init_db()
+    try:
+        auth_data = db.child("auth_credentials").get().val()
+        if not auth_data or "usernames" not in auth_data:
+            default_password = "admin123"
+            hashed = Hasher([default_password]).generate()[0]
+            default_admin = {
+                "usernames": {
+                    "admin": {
+                        "email": "admin@example.com",
+                        "name": "Quản trị viên",
+                        "password": hashed,
+                        "role": "admin",
+                        "color": "#FFD700"
+                    }
+                }
+            }
+            db.child("auth_credentials").set(default_admin)
+            return default_admin
+        usernames = auth_data.get("usernames", {})
+        clean_users = {}
+        for u, info in usernames.items():
+            if not isinstance(info, dict):
+                continue
+            clean_users[u] = {
+                "email": info.get("email", ""),
+                "name": info.get("name", u),
+                "password": info.get("password", ""),
+                "role": info.get("role", "officer"),
+                "color": info.get("color", "#0066cc")
+            }
+        return {"usernames": clean_users}
+    except Exception as e:
+        st.error(f"Lỗi tải credentials: {e}")
+        return {"usernames": {}}
+
+def save_credentials_to_firebase(credentials):
+    db = init_db()
+    try:
+        db.child("auth_credentials").set(credentials)
+        return True
+    except Exception as e:
+        st.error(f"Lỗi lưu credentials: {e}")
+        return False
+
+def load_officers_cached():
+    db = init_db()
+    try:
+        result = db.child("officers").get().val()
+        if result:
+            now = int(time.time() * 1000)
+            online_limit = 20 * 60 * 1000
+            filtered = {}
+            for uid, data in result.items():
+                last_update = data.get("lastUpdate")
+                if last_update and (now - int(last_update)) < online_limit:
+                    if is_valid_coordinate(data.get("lat"), data.get("lng")):
+                        filtered[uid] = data
+            return filtered
+        return {}
+    except Exception as e:
+        st.error(f"Lỗi Firebase: {e}")
+        return {}
+
+def load_all_markers():
+    db = init_db()
+    try:
+        all_markers = db.child("markers").get().val()
+        markers_dict = {}
+        if all_markers:
+            for uid, user_markers in all_markers.items():
+                if user_markers and isinstance(user_markers, dict):
+                    for key, marker in user_markers.items():
+                        if isinstance(marker, dict) and marker.get("timestamp") and is_valid_coordinate(marker.get("lat"), marker.get("lng")):
+                            markers_dict[key] = marker
+        return markers_dict
+    except Exception as e:
+        st.error(f"Lỗi đọc markers: {e}")
+        return {}
+
+def load_incidents():
+    db = init_db()
+    try:
+        incidents = db.child("incidents").get().val()
+        incidents_dict = {}
+        if incidents:
+            for key, inc in incidents.items():
+                if isinstance(inc, dict) and inc.get("timestamp") and is_valid_coordinate(inc.get("lat"), inc.get("lng")):
+                    incidents_dict[key] = inc
+        return incidents_dict
+    except Exception as e:
+        st.error(f"Lỗi đọc incidents: {e}")
+        return {}
+
+def send_fcm_notification(title, body, target_token, server_key):
+    import requests
+    url = "https://fcm.googleapis.com/fcm/send"
+    headers = {
+        "Authorization": f"key={server_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "to": target_token,
+        "notification": {
+            "title": title,
+            "body": body,
+            "sound": "default"
+        }
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        return response.json()
+    except Exception as e:
+        print("FCM error:", e)
+        return None
+
+def cleanup_old_data():
+    db = init_db()
+    try:
+        incidents = db.child("incidents").get().val()
+        if incidents:
+            now = int(time.time() * 1000)
+            for key, inc in incidents.items():
+                if now - inc.get("timestamp", 0) > 24 * 3600 * 1000:
+                    db.child("incidents").child(key).remove()
+        
+        alerts = db.child("alerts").get().val()
+        if alerts:
+            now = int(time.time() * 1000)
+            for key, alert in alerts.items():
+                if now - alert.get("timestamp", 0) > 60 * 60 * 1000:
+                    db.child("alerts").child(key).remove()
+        
+        drawings = db.child("drawings").get().val()
+        if drawings:
+            now = int(time.time() * 1000)
+            for key, drawing in drawings.items():
+                if now - drawing.get("timestamp", 0) > 24 * 3600 * 1000:
+                    db.child("drawings").child(key).remove()
+        
+        markers = db.child("markers").get().val()
+        if markers:
+            now = int(time.time() * 1000)
+            for uid, user_markers in markers.items():
+                if user_markers and isinstance(user_markers, dict):
+                    for marker_key, marker in user_markers.items():
+                        if now - marker.get("timestamp", 0) > 24 * 3600 * 1000:
+                            db.child("markers").child(uid).child(marker_key).remove()
+        
+        move_orders = db.child("move_orders").get().val()
+        if move_orders:
+            now = int(time.time() * 1000)
+            for key, order in move_orders.items():
+                if now - order.get("timestamp", 0) > 30 * 60 * 1000:
+                    db.child("move_orders").child(key).remove()
+    except Exception as e:
+        print("Cleanup error:", e)
+
+def cleanup_offline_officers():
+    db = init_db()
+    try:
+        officers = db.child("officers").get().val()
+        if not officers:
+            return
+        now = int(time.time() * 1000)
+        limit = 20 * 60 * 1000
+        for uid, data in officers.items():
+            last_update = data.get("lastUpdate")
+            if last_update and now - int(last_update) > limit:
+                db.child("officers").child(uid).remove()
+    except Exception as e:
+        print("Cleanup offline officers error:", e)
+
+def detect_stationary_officers():
+    db = init_db()
+    try:
+        officers = db.child("officers").get().val()
+        if not officers:
+            return []
+        now = int(time.time() * 1000)
+        online_limit = 20 * 60 * 1000
+        threshold = 15 * 60 * 1000
+        stationary = []
+        for uid, data in officers.items():
+            last = data.get("lastUpdate")
+            if last and (now - int(last)) < online_limit and is_valid_coordinate(data.get("lat"), data.get("lng")):
+                if (now - int(last)) > threshold:
+                    stationary.append({
+                        "uid": uid,
+                        "name": data.get("name"),
+                        "lat": data["lat"],
+                        "lng": data["lng"],
+                        "lastUpdate": last
+                    })
+        return stationary
+    except Exception as e:
+        print("Stationary detection error:", e)
+        return []
