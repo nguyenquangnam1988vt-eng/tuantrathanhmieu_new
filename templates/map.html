@@ -692,15 +692,20 @@
     // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
     let activeBlinkIntervals = {};
+    let areaCircles = {}; // lưu { id: { circle, intervalId } }
 
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
             await remove(areaBroadcastsRef);
-            for (const intervalId in activeBlinkIntervals) {
-                clearInterval(activeBlinkIntervals[intervalId]);
-                delete activeBlinkIntervals[intervalId];
+            // Xóa sạch vòng tròn trên map của officer
+            for (const id in areaCircles) {
+                if (areaCircles[id]) {
+                    if (map && areaCircles[id].circle) map.removeLayer(areaCircles[id].circle);
+                    clearInterval(areaCircles[id].intervalId);
+                }
             }
+            areaCircles = {};
             alert("Đã xóa tất cả cảnh báo khu vực.");
         } catch (error) {
             console.error("Lỗi khi xóa area broadcasts:", error);
@@ -728,12 +733,19 @@
         if (navigator.vibrate) navigator.vibrate(100);
     }
 
-    function handleAreaBroadcast(data) {
+    function handleAreaBroadcast(data, id) {
         if (!data || !data.lat || !data.lng) return;
         const { lat, lng, radius = 500, text, sender } = data;
         const senderName = sender || "Chỉ huy";
         const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
-
+    
+        // Xóa cũ nếu có (tránh trùng)
+        if (areaCircles[id]) {
+            map.removeLayer(areaCircles[id].circle);
+            clearInterval(areaCircles[id].intervalId);
+            delete areaCircles[id];
+        }
+    
         const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
         let visible = true;
         const blinkInterval = setInterval(() => {
@@ -742,19 +754,22 @@
             else circle.addTo(map);
             visible = !visible;
         }, 600);
-        const intervalId = Date.now() + Math.random();
-        activeBlinkIntervals[intervalId] = blinkInterval;
+        
+        areaCircles[id] = { circle, intervalId: blinkInterval };
+        
         setTimeout(() => {
-            clearInterval(blinkInterval);
-            if (map && circle) circle.addTo(map);
-            delete activeBlinkIntervals[intervalId];
+            if (areaCircles[id]) {
+                clearInterval(areaCircles[id].intervalId);
+                if (map && areaCircles[id].circle) areaCircles[id].circle.addTo(map);
+                delete areaCircles[id];
+            }
         }, 10000);
-
+    
         if (map) {
             L.popup().setLatLng([lat, lng]).setContent(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`).openOn(map);
             setTimeout(() => map.closePopup(), 8000);
         }
-
+    
         if (window.speechSynthesis) {
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(messageText);
@@ -767,11 +782,19 @@
             window.speechSynthesis.speak(utterance);
         }
     }
-
     onChildAdded(areaBroadcastsRef, (snapshot) => {
         const data = snapshot.val();
+        const id = snapshot.key;
         if (!data) return;
-        handleAreaBroadcast(data);
+        handleAreaBroadcast(data, id);
+    });
+    onChildRemoved(areaBroadcastsRef, (snapshot) => {
+        const id = snapshot.key;
+        if (areaCircles[id]) {
+            if (map && areaCircles[id].circle) map.removeLayer(areaCircles[id].circle);
+            clearInterval(areaCircles[id].intervalId);
+            delete areaCircles[id];
+        }
     });
 
     // ==================== DRAWING TOOLBAR ====================
