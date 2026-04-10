@@ -239,15 +239,6 @@
             dummy.lang = "vi-VN";
             window.speechSynthesis.speak(dummy);
         }
-        // 3. Đánh thức alertSound (không phát to)
-        if (alertSound) {
-            alertSound.volume = 0;
-            alertSound.play().then(() => {
-                alertSound.pause();
-                alertSound.currentTime = 0;
-                alertSound.volume = 1;
-            }).catch(e => console.log("Alert sound activation failed", e));
-        }
         // 4. Phát lại các broadcast đã lưu
         if (pendingBroadcasts.length > 0) {
             console.log(`Phát lại ${pendingBroadcasts.length} broadcast đã lưu`);
