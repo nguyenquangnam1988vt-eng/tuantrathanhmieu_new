@@ -129,6 +129,15 @@
             transition: opacity 0.5s;
             font-weight: bold;
         }
+        /* CSS nhấp nháy cho vòng tròn cảnh báo khu vực */
+        .blink-circle {
+            animation: blink-animation 1s step-start infinite;
+        }
+        @keyframes blink-animation {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -735,42 +744,90 @@
 
     setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
 
-    // ==================== AREA BROADCAST (ĐÃ SỬA HOÀN TOÀN) ====================
+    // ==================== AREA BROADCAST (VIẾT LẠI THEO HƯỚNG FIREBASE LÀ NGUỒN SỰ THẬT) ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
-    let activeAreaCircles = {};
-    let activeBlinkIntervals = {};
+    // Lưu trữ các circle hiện tại, key = broadcastId
+    let areaCircles = {};
 
-    // Hàm dọn dẹp visuals (xóa khỏi map và reset biến)
-    function clearAllAreaVisuals() {
-        // Xóa tất cả circle khỏi map
-        for (const id in activeAreaCircles) {
-            if (activeAreaCircles[id]) {
-                map.removeLayer(activeAreaCircles[id]);
-            }
-            delete activeAreaCircles[id];
+    // Hàm xóa tất cả circle hiện có
+    function removeAllAreaCircles() {
+        for (const id in areaCircles) {
+            if (areaCircles[id]) map.removeLayer(areaCircles[id]);
+            delete areaCircles[id];
         }
-        // Dừng tất cả interval nhấp nháy
-        for (const intervalId in activeBlinkIntervals) {
-            clearInterval(activeBlinkIntervals[intervalId]);
-            delete activeBlinkIntervals[intervalId];
-        }
-        // Reset biến (đảm bảo không còn reference cũ)
-        activeAreaCircles = {};
-        activeBlinkIntervals = {};
+        areaCircles = {};
     }
+
+    // Hàm tạo một circle mới (không nhấp nháy bằng interval, dùng CSS animation)
+    function createAreaCircle(id, data) {
+        const { lat, lng, radius = 500, text, sender } = data;
+        const circle = L.circle([lat, lng], {
+            radius: radius,
+            color: 'blue',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.3,
+            weight: 3,
+            className: 'blink-circle'  // CSS animation nhấp nháy
+        }).addTo(map);
+        // Thêm popup
+        const senderName = sender || "Chỉ huy";
+        circle.bindPopup(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`);
+        areaCircles[id] = circle;
+        // Tự động xóa sau 10 giây (nhưng vẫn giữ trong Firebase? Theo yêu cầu, vòng tròn biến mất sau 10s nhưng không xóa khỏi DB.
+        // Ở đây ta chỉ xóa khỏi map sau 10s, nhưng nếu Firebase vẫn còn, nó sẽ được vẽ lại khi onValue chạy? Cần cân nhắc.
+        // Để đúng với logic "Firebase là nguồn sự thật", nếu muốn vòng tròn tự động biến mất sau 10s, ta cần xóa khỏi Firebase sau 10s.
+        // Nhưng yêu cầu ban đầu là vòng tròn nhấp nháy 10s rồi biến mất, không cần lưu lại. Vậy ta sẽ xóa khỏi Firebase sau 10s.
+        setTimeout(() => {
+            // Chỉ xóa nếu vòng tròn này vẫn còn trong areaCircles (chưa bị xóa bởi sự kiện khác)
+            if (areaCircles[id]) {
+                map.removeLayer(areaCircles[id]);
+                delete areaCircles[id];
+                // Xóa luôn dữ liệu trên Firebase để đồng bộ
+                remove(ref(db, 'area_broadcasts/' + id)).catch(console.error);
+            }
+        }, 10000);
+    }
+
+    // Hàm đồng bộ toàn bộ từ Firebase (dùng onValue)
+    function syncAreaBroadcasts(snapshot) {
+        const data = snapshot.val();
+        const newIds = new Set();
+        if (data && typeof data === 'object') {
+            for (const id in data) {
+                newIds.add(id);
+                // Nếu chưa có circle cho id này, tạo mới
+                if (!areaCircles[id]) {
+                    const broadcast = data[id];
+                    if (broadcast && broadcast.lat && broadcast.lng) {
+                        createAreaCircle(id, broadcast);
+                    }
+                }
+            }
+        }
+        // Xóa những circle có id không còn trong Firebase
+        for (const id in areaCircles) {
+            if (!newIds.has(id)) {
+                map.removeLayer(areaCircles[id]);
+                delete areaCircles[id];
+            }
+        }
+    }
+
+    // Đăng ký onValue để đồng bộ mỗi khi dữ liệu thay đổi
+    onValue(areaBroadcastsRef, (snapshot) => {
+        syncAreaBroadcasts(snapshot);
+    });
 
     // Hàm xóa toàn bộ cảnh báo khu vực (gọi từ nút)
     async function clearAllAreaBroadcasts() {
         if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
         try {
-            // 1. Xóa dữ liệu trên Firebase
             await remove(areaBroadcastsRef);
-            // 2. Xóa visuals ngay lập tức
-            clearAllAreaVisuals();
+            // Không cần xóa thủ công map vì onValue sẽ tự đồng bộ
             alert("Đã xóa tất cả cảnh báo khu vực.");
         } catch (error) {
             console.error("Lỗi khi xóa area broadcasts:", error);
-            alert("Có lỗi xảy ra khi xóa: " + error.message);
+            alert("Có lỗi xảy ra khi xóa.");
         }
     }
 
@@ -793,85 +850,6 @@
         if (dialog) dialog.remove();
         if (navigator.vibrate) navigator.vibrate(100);
     }
-
-    function handleAreaBroadcast(data, key) {
-        if (!data || !data.lat || !data.lng) return;
-        // Kiểm tra dữ liệu có hợp lệ không (tránh vẽ lại sau khi xóa)
-        if (!data.timestamp || data.timestamp === 0) return;
-        
-        const broadcastId = key;
-        const { lat, lng, radius = 500, text, sender } = data;
-        const senderName = sender || "Chỉ huy";
-        const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
-
-        // Nếu đã có circle cho broadcast này thì không vẽ lại
-        if (activeAreaCircles[broadcastId]) return;
-
-        const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
-        activeAreaCircles[broadcastId] = circle;
-        
-        let visible = true;
-        const blinkInterval = setInterval(() => {
-            if (!map) { clearInterval(blinkInterval); return; }
-            if (visible) map.removeLayer(circle);
-            else circle.addTo(map);
-            visible = !visible;
-        }, 600);
-        activeBlinkIntervals[broadcastId] = blinkInterval;
-        
-        setTimeout(() => {
-            clearInterval(blinkInterval);
-            delete activeBlinkIntervals[broadcastId];
-            if (map && circle) circle.addTo(map);
-            delete activeAreaCircles[broadcastId];
-        }, 10000);
-
-        if (map) {
-            L.popup().setLatLng([lat, lng]).setContent(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`).openOn(map);
-            setTimeout(() => map.closePopup(), 8000);
-        }
-
-        if (window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(messageText);
-            utterance.lang = "vi-VN";
-            utterance.rate = 0.9;
-            utterance.pitch = 1;
-            const voices = window.speechSynthesis.getVoices();
-            const viVoice = voices.find(v => v.lang === "vi-VN");
-            if (viVoice) utterance.voice = viVoice;
-            window.speechSynthesis.speak(utterance);
-        }
-    }
-
-    onChildAdded(areaBroadcastsRef, (snapshot) => {
-        const data = snapshot.val();
-        const key = snapshot.key;
-        if (!data) return;
-        // Kiểm tra timestamp để tránh dữ liệu cũ
-        if (data.timestamp && Date.now() - data.timestamp > 24 * 60 * 60 * 1000) return;
-        handleAreaBroadcast(data, key);
-    });
-
-    onChildRemoved(areaBroadcastsRef, (snapshot) => {
-        const key = snapshot.key;
-        if (activeAreaCircles[key]) {
-            map.removeLayer(activeAreaCircles[key]);
-            delete activeAreaCircles[key];
-        }
-        if (activeBlinkIntervals[key]) {
-            clearInterval(activeBlinkIntervals[key]);
-            delete activeBlinkIntervals[key];
-        }
-    });
-
-    // Quan trọng: khi database rỗng (snapshot null) thì dọn dẹp toàn bộ
-    onValue(areaBroadcastsRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data === null) {
-            clearAllAreaVisuals();
-        }
-    });
 
     // ==================== DRAWING TOOLBAR ====================
     if (userRole === 'commander' || userRole === 'admin') {
@@ -936,22 +914,11 @@
                 Object.keys(alertMarkers).forEach(id => removeAlertMarker(id));
             }
         });
-        
-        // Gắn sự kiện trực tiếp cho nút xóa cảnh báo khu vực (KHÔNG dùng setTimeout)
         const clearAreaBtn = document.getElementById('clear-all-area');
         if (clearAreaBtn) {
             clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
         } else {
-            console.warn("Không tìm thấy nút clear-all-area, sẽ thử lại sau 100ms");
-            // Fallback: nếu chưa có thì đợi DOM render
-            const checkInterval = setInterval(() => {
-                const btn = document.getElementById('clear-all-area');
-                if (btn) {
-                    btn.addEventListener('click', clearAllAreaBroadcasts);
-                    clearInterval(checkInterval);
-                }
-            }, 100);
-            setTimeout(() => clearInterval(checkInterval), 5000);
+            console.warn("Không tìm thấy nút clear-all-area");
         }
     }
 
