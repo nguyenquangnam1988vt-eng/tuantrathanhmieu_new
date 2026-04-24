@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
     <style>
+        /* ---------- toàn bộ style cũ, giữ nguyên ---------- */
         #map { height: 600px; width: 100%; }
         .leaflet-container { will-change: transform; }
         .custom-tooltip {
@@ -157,6 +158,7 @@
     let initialOfficers = {{ initial_officers }};
     const alertSoundBase64 = "{{ alert_sound_base64 }}";
     const fcmVapidKey = "{{ fcm_vapid_key }}";
+    <!-- ========== THÊM MỚI: biến clearDirectionFlag ========== -->
     const clearDirectionFlag = {{ clear_direction }};
 
     function safeObject(v) {
@@ -168,7 +170,6 @@
     const safeUserColors = safeObject(userColors);
     if (typeof userRole !== 'string') userRole = 'officer';
 
-    // ==================== BIẾN TOÀN CỤC ====================
     let map = null;
     let officerClusterGroup = null;
     let allOfficers = {};
@@ -203,7 +204,7 @@
     let audioReady = false;
     let pendingBroadcasts = [];
 
-    // ==================== CHỈ HƯỚNG (MỚI) ====================
+    <!-- ========== THÊM MỚI: biến và hàm chỉ hướng ========== -->
     let currentDirectionLine = null;
     let currentUserLocation = null;
 
@@ -259,22 +260,95 @@
     window.drawDirectionToOfficer = drawDirectionToOfficer;
     window.clearDirectionLine = clearDirectionLine;
 
-    // ==================== CÁC HÀM TIỆN ÍCH ====================
-    function isValidVNCoordinate(lat, lng) {
-        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
-        if (lat === 0 && lng === 0) return false;
-        return true;
+    const toast = document.getElementById('audioToast');
+    function showAudioToast() {
+        if (!audioReady) {
+            toast.style.visibility = 'visible';
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                if (!audioReady) {
+                    toast.style.opacity = '0';
+                    setTimeout(() => toast.style.visibility = 'hidden', 500);
+                }
+            }, 5000);
+        }
+    }
+    showAudioToast();
+
+    // Kích hoạt âm thanh bằng chạm màn hình (phát một tiếng "click" rất nhỏ hoặc silent buffer)
+    function enableAudio() {
+        if (audioReady) return;
+        audioReady = true;
+        toast.style.opacity = '0';
+        setTimeout(() => toast.style.visibility = 'hidden', 500);
+        // 1. Dùng Web Audio API để đánh thức audio context
+        if (window.AudioContext || window.webkitAudioContext) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // Tạo một buffer 1 mẫu, im lặng, nhưng đủ để resume context
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start();
+            audioCtx.resume().then(() => console.log("AudioContext resumed"));
+        }
+        // 2. Đánh thức SpeechSynthesis
+        if (window.speechSynthesis) {
+            const dummy = new SpeechSynthesisUtterance("");
+            dummy.lang = "vi-VN";
+            window.speechSynthesis.speak(dummy);
+        }
+        // 4. Phát lại các broadcast đã lưu
+        if (pendingBroadcasts.length > 0) {
+            console.log(`Phát lại ${pendingBroadcasts.length} broadcast đã lưu`);
+            pendingBroadcasts.forEach(b => speakBroadcast(b.message, b.sender));
+            pendingBroadcasts = [];
+        }
+        console.log("Audio enabled");
+    }
+    document.addEventListener('touchstart', enableAudio, { once: true });
+    document.addEventListener('click', enableAudio, { once: true });
+
+    function speakBroadcast(message, sender) {
+        if (!audioReady) {
+            pendingBroadcasts.push({ message, sender });
+            console.log("Broadcast lưu lại, sẽ phát sau khi kích hoạt âm thanh");
+            return;
+        }
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const fullMessage = `Thông báo từ ${sender}. ${message}`;
+        const utterance = new SpeechSynthesisUtterance(fullMessage);
+        utterance.lang = "vi-VN";
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        const voices = window.speechSynthesis.getVoices();
+        const viVoice = voices.find(v => v.lang === "vi-VN");
+        if (viVoice) utterance.voice = viVoice;
+        window.speechSynthesis.speak(utterance);
     }
 
-    function haversine(lat1, lng1, lat2, lng2) {
-        const R = 6371e3;
-        const φ1 = lat1 * Math.PI/180;
-        const φ2 = lat2 * Math.PI/180;
-        const Δφ = (lat2 - lat1) * Math.PI/180;
-        const Δλ = (lng2 - lng1) * Math.PI/180;
-        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        return R * c;
+    // ========== CACHE ==========
+    function saveOfficersToCache() {
+        try { localStorage.setItem("cached_officers", JSON.stringify(allOfficers)); } catch(e) { console.warn("Cache save failed", e); }
+    }
+    function loadOfficersFromCache() {
+        try {
+            const cached = localStorage.getItem("cached_officers");
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                Object.assign(allOfficers, parsed);
+                for (const [uid, officer] of Object.entries(parsed)) {
+                    if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+                        updateOfficerMarker(uid, officer);
+                    }
+                }
+                console.log("Loaded officers from cache");
+                return true;
+            }
+        } catch(e) { console.warn("Cache load failed", e); }
+        return false;
     }
 
     function getOfficerStatus(lastUpdate) {
@@ -298,17 +372,21 @@
         return getStatusColor(status);
     }
 
-    function createOfficerIcon(color) {
-        return L.divIcon({
-            className: '',
-            html: `<div style="background:${color}; width:22px; height:22px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px ${color};"></div>`,
-            iconSize: [22, 22],
-            popupAnchor: [0, -12]
-        });
+    // Nới lỏng kiểm tra tọa độ
+    function isValidVNCoordinate(lat, lng) {
+        if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+        if (lat === 0 && lng === 0) return false;
+        // if (lat < 8 || lat > 24 || lng < 102 || lng > 110) return false;
+        return true;
     }
 
+    <!-- ========== SỬA HÀM updateOfficerMarker để thêm nút chỉ hướng trong popup ========== -->
     function updateOfficerMarker(uid, officer) {
-        if (!map || !officerClusterGroup) return;
+        if (!map || !officerClusterGroup) {
+            console.warn("Map or cluster not ready, will retry in 500ms");
+            setTimeout(() => updateOfficerMarker(uid, officer), 500);
+            return;
+        }
         if (!officer || typeof officer.lat !== 'number' || typeof officer.lng !== 'number') return;
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         const latlng = [officer.lat, officer.lng];
@@ -367,7 +445,62 @@
         }
     }
 
-    // ==================== KHỞI TẠO MAP ====================
+    function createOfficerIcon(color) {
+        return L.divIcon({
+            className: '',
+            html: `<div style="background:${color}; width:22px; height:22px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px ${color};"></div>`,
+            iconSize: [22, 22],
+            popupAnchor: [0, -12]
+        });
+    }
+
+    function haversine(lat1, lng1, lat2, lng2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2 - lat1) * Math.PI/180;
+        const Δλ = (lng2 - lng1) * Math.PI/180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    function getBearing(lat1, lng1, lat2, lng2) {
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const λ1 = lng1 * Math.PI/180;
+        const λ2 = lng2 * Math.PI/180;
+        const y = Math.sin(λ2-λ1) * Math.cos(φ2);
+        const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+        return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
+    }
+
+    function initAudioAlert() {
+        if (alertSound) return;
+        alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
+        alertSound.preload = "auto";
+        alertSound.loop = false;
+    }
+
+    function stopAlertSound() {
+        if (alertSound && !alertSound.paused) {
+            alertSound.pause();
+            alertSound.currentTime = 0;
+        }
+    }
+
+    function removeAlertMarker(alertId) {
+        if (alertMarkers[alertId]) {
+            map.removeLayer(alertMarkers[alertId]);
+            delete alertMarkers[alertId];
+        }
+        if (alertTimeouts[alertId]) {
+            clearTimeout(alertTimeouts[alertId]);
+            delete alertTimeouts[alertId];
+        }
+        if (Object.keys(alertMarkers).length === 0) stopAlertSound();
+    }
+
     function initMap() {
         const savedCenter = sessionStorage.getItem('mapCenter');
         const savedZoom = sessionStorage.getItem('mapZoom');
@@ -417,7 +550,6 @@
         }
     }
 
-    // ==================== AUDIO & ALERT ====================
     let noSleep = new NoSleep();
     function enableNoSleepOnce() {
         try { noSleep.enable(); console.log("NoSleep enabled"); } catch(e) { console.warn("NoSleep failed:", e); }
@@ -440,79 +572,15 @@
     }
 
     initMap();
-
-    function initAudioAlert() {
-        if (alertSound) return;
-        alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
-        alertSound.preload = "auto";
-        alertSound.loop = false;
-    }
     initAudioAlert();
+    document.addEventListener("click", () => {
+        if (!audioActivated && alertSound) {
+            alertSound.load();
+            audioActivated = true;
+        }
+    });
 
-    // Kích hoạt âm thanh
-    const toast = document.getElementById('audioToast');
-    function showAudioToast() {
-        if (!audioReady) {
-            toast.style.visibility = 'visible';
-            toast.style.opacity = '1';
-            setTimeout(() => {
-                if (!audioReady) {
-                    toast.style.opacity = '0';
-                    setTimeout(() => toast.style.visibility = 'hidden', 500);
-                }
-            }, 5000);
-        }
-    }
-    showAudioToast();
-
-    function enableAudio() {
-        if (audioReady) return;
-        audioReady = true;
-        toast.style.opacity = '0';
-        setTimeout(() => toast.style.visibility = 'hidden', 500);
-        if (window.AudioContext || window.webkitAudioContext) {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const buffer = audioCtx.createBuffer(1, 1, 22050);
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-            source.start();
-            audioCtx.resume().then(() => console.log("AudioContext resumed"));
-        }
-        if (window.speechSynthesis) {
-            const dummy = new SpeechSynthesisUtterance("");
-            dummy.lang = "vi-VN";
-            window.speechSynthesis.speak(dummy);
-        }
-        if (pendingBroadcasts.length > 0) {
-            pendingBroadcasts.forEach(b => speakBroadcast(b.message, b.sender));
-            pendingBroadcasts = [];
-        }
-        console.log("Audio enabled");
-    }
-    document.addEventListener('touchstart', enableAudio, { once: true });
-    document.addEventListener('click', enableAudio, { once: true });
-
-    function speakBroadcast(message, sender) {
-        if (!audioReady) {
-            pendingBroadcasts.push({ message, sender });
-            return;
-        }
-        if (!window.speechSynthesis) return;
-        window.speechSynthesis.cancel();
-        const fullMessage = `Thông báo từ ${sender}. ${message}`;
-        const utterance = new SpeechSynthesisUtterance(fullMessage);
-        utterance.lang = "vi-VN";
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-        const voices = window.speechSynthesis.getVoices();
-        const viVoice = voices.find(v => v.lang === "vi-VN");
-        if (viVoice) utterance.voice = viVoice;
-        window.speechSynthesis.speak(utterance);
-    }
-
-    // ==================== GỬI VỊ TRÍ CỦA TÔI ====================
+    // === GỬI VỊ TRÍ LÊN FIREBASE VÀ FOLLOW ME ===
     let lastTrackLat = null;
     let lastTrackLng = null;
     if (navigator.geolocation) {
@@ -550,7 +618,19 @@
         console.warn("Geolocation not supported");
     }
 
-    // ==================== LOAD DỮ LIỆU OFFICERS ====================
+    const hasCache = loadOfficersFromCache();
+
+    for (const [uid, officer] of Object.entries(safeInitialOfficers)) {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng) && !allOfficers[uid]) {
+            allOfficers[uid] = officer;
+            updateOfficerMarker(uid, officer);
+        }
+    }
+
+    function saveCacheAfterChange() {
+        saveOfficersToCache();
+    }
+
     const officersRef = ref(db, 'officers');
     onDisconnect(ref(db, 'officers/' + myUsername)).remove();
 
@@ -562,6 +642,7 @@
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         allOfficers[id] = officer;
         updateOfficerMarker(id, officer);
+        saveCacheAfterChange();
         if (id === myUsername && !sessionStorage.getItem('zoomedToMe')) {
             map.setView([officer.lat, officer.lng], 16);
             sessionStorage.setItem('zoomedToMe', 'true');
@@ -576,18 +657,28 @@
         if (!isValidVNCoordinate(officer.lat, officer.lng)) return;
         allOfficers[id] = officer;
         updateOfficerMarker(id, officer);
+        saveCacheAfterChange();
     });
 
     onChildRemoved(officersRef, (snapshot) => {
         const id = snapshot.key;
+        console.warn("Officer removed from Firebase:", id);
         delete allOfficers[id];
         removeOfficerMarker(id);
+        saveCacheAfterChange();
+    });
+
+    safeStationaryOfficers.forEach(officer => {
+        if (officer && isValidVNCoordinate(officer.lat, officer.lng)) {
+            L.circleMarker([officer.lat, officer.lng], { radius: 8, color: 'orange', fillColor: 'orange', fillOpacity: 0.8, weight: 2, renderer: L.canvas() }).addTo(map).bindTooltip(`⚠ ${officer.name} đứng yên >15 phút`);
+        }
     });
 
     // ==================== ALERTS (BÁO ĐỘNG) ====================
     const alertsRef = ref(db, 'alerts');
     const oneDayAgo = Date.now() - 24*60*60*1000;
     const playedAlerts = new Set(JSON.parse(sessionStorage.getItem("playedAlerts") || "[]"));
+    function savePlayedAlerts() { sessionStorage.setItem("playedAlerts", JSON.stringify([...playedAlerts])); }
 
     function getAlertPopupContent(alert) {
         if (!alert || !alert.name) return "Báo động không hợp lệ";
@@ -608,17 +699,6 @@
 
     const alertIcon = L.divIcon({ className: '', html: '<div class="alert-marker"></div>', iconSize: [24, 24], popupAnchor: [0, -12] });
 
-    function removeAlertMarker(alertId) {
-        if (alertMarkers[alertId]) {
-            map.removeLayer(alertMarkers[alertId]);
-            delete alertMarkers[alertId];
-        }
-        if (alertTimeouts[alertId]) {
-            clearTimeout(alertTimeouts[alertId]);
-            delete alertTimeouts[alertId];
-        }
-    }
-
     onChildAdded(alertsRef, (data) => {
         const alert = data.val();
         const id = data.key;
@@ -635,7 +715,7 @@
         const isRecent = (now - alert.timestamp) < 15000;
         if (!isMyAlert && isRecent && !playedAlerts.has(id)) {
             playedAlerts.add(id);
-            sessionStorage.setItem("playedAlerts", JSON.stringify([...playedAlerts]));
+            savePlayedAlerts();
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
             if (audioActivated && alertSound) {
                 alertSound.currentTime = 0;
@@ -682,8 +762,13 @@
         if (lastBroadcastIds.has(broadcastId)) return;
         if (isInitialLoad) { lastBroadcastIds.add(broadcastId); return; }
         lastBroadcastIds.add(broadcastId);
+        if (lastBroadcastIds.size > 100) {
+            const toDelete = [...lastBroadcastIds].slice(0, 50);
+            toDelete.forEach(id => lastBroadcastIds.delete(id));
+        }
         const sender = broadcast.sender || broadcast.senderId || "Chỉ huy";
         const message = broadcast.text;
+        console.log(`📢 Broadcast từ ${sender}: ${message}`);
         if (map) {
             const center = map.getCenter();
             L.popup().setLatLng(center).setContent(`📢 <b>THÔNG BÁO TỪ ${sender.toUpperCase()}</b><br>${message}`).openOn(map);
@@ -691,12 +776,32 @@
         }
         speakBroadcast(message, sender);
     });
-    setTimeout(() => { isInitialLoad = false; }, 2000);
 
-    // ==================== AREA BROADCAST ====================
+    setTimeout(() => { isInitialLoad = false; console.log("Broadcast listener ready"); }, 2000);
+
+   // ==================== AREA BROADCAST ====================
     const areaBroadcastsRef = ref(db, 'area_broadcasts');
-    let areaLayers = {};
-
+    let areaLayers = {}; // lưu { id: { circle, intervalId } }
+    
+    async function clearAllAreaBroadcasts() {
+        if (!confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực đang hiển thị?")) return;
+        try {
+            await remove(areaBroadcastsRef);
+            // onValue sẽ tự động dọn dẹp, nhưng xóa luôn trong bộ nhớ để chắc chắn
+            for (const id in areaLayers) {
+                if (areaLayers[id]) {
+                    if (map && areaLayers[id].circle) map.removeLayer(areaLayers[id].circle);
+                    clearInterval(areaLayers[id].intervalId);
+                }
+            }
+            areaLayers = {};
+            alert("Đã xóa tất cả cảnh báo khu vực.");
+        } catch (error) {
+            console.error("Lỗi khi xóa area broadcasts:", error);
+            alert("Có lỗi xảy ra khi xóa.");
+        }
+    }
+    
     function sendAreaBroadcast(lat, lng, note) {
         const data = {
             text: note || "",
@@ -709,29 +814,41 @@
             timestamp: Date.now()
         };
         push(areaBroadcastsRef, data).catch(console.error);
+        console.log("📢 Đã phát lệnh khu vực:", data);
         const overlay = document.getElementById('dialog-overlay');
         if (overlay) overlay.remove();
         const dialog = document.querySelector('.custom-dialog');
         if (dialog) dialog.remove();
         if (navigator.vibrate) navigator.vibrate(100);
     }
-
+    
+    // Sử dụng onValue để đồng bộ toàn bộ, tự động xóa khi dữ liệu biến mất
     onValue(areaBroadcastsRef, (snapshot) => {
         const data = snapshot.val() || {};
         const currentIds = new Set(Object.keys(data));
+        
+        // Xóa những vòng tròn không còn trong DB
         for (const id in areaLayers) {
             if (!currentIds.has(id)) {
                 const { circle, intervalId } = areaLayers[id];
                 if (map && circle) map.removeLayer(circle);
                 clearInterval(intervalId);
                 delete areaLayers[id];
+                console.log(`🗑️ Đã xóa area broadcast ${id}`);
             }
         }
+        
+        // Thêm hoặc cập nhật mới (cập nhật nếu cần, nhưng ở đây ta chỉ thêm mới)
         for (const [id, broadcast] of Object.entries(data)) {
             if (!broadcast || !broadcast.lat || !broadcast.lng) continue;
+            
+            // Nếu đã tồn tại thì bỏ qua (hoặc có thể cập nhật nội dung, nhưng không cần thiết)
             if (areaLayers[id]) continue;
+            
             const { lat, lng, radius = 500, text, sender } = broadcast;
             const senderName = sender || "Chỉ huy";
+            const messageText = text ? `Cảnh báo khu vực. ${text}` : "Cảnh báo khu vực. Yêu cầu chú ý.";
+            
             const circle = L.circle([lat, lng], { radius: radius, color: 'blue', fillColor: '#3b82f6', fillOpacity: 0.3, weight: 3 }).addTo(map);
             let visible = true;
             const blinkInterval = setInterval(() => {
@@ -740,7 +857,10 @@
                 else circle.addTo(map);
                 visible = !visible;
             }, 600);
+            
             areaLayers[id] = { circle, intervalId: blinkInterval };
+            
+            // Tự động xóa sau 10 giây (vẫn giữ logic cũ, nhưng nếu commander xóa sớm thì sẽ bị xóa bởi onValue)
             setTimeout(() => {
                 if (areaLayers[id]) {
                     clearInterval(areaLayers[id].intervalId);
@@ -748,15 +868,18 @@
                     delete areaLayers[id];
                 }
             }, 10000);
+            
             if (map) {
                 L.popup().setLatLng([lat, lng]).setContent(`🔵 <b>LỆNH KHU VỰC TỪ ${senderName.toUpperCase()}</b><br>${text || "Không có nội dung"}`).openOn(map);
                 setTimeout(() => map.closePopup(), 8000);
             }
+            
             if (window.speechSynthesis) {
                 window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text || "Cảnh báo khu vực");
+                const utterance = new SpeechSynthesisUtterance(messageText);
                 utterance.lang = "vi-VN";
                 utterance.rate = 0.9;
+                utterance.pitch = 1;
                 const voices = window.speechSynthesis.getVoices();
                 const viVoice = voices.find(v => v.lang === "vi-VN");
                 if (viVoice) utterance.voice = viVoice;
@@ -830,19 +953,11 @@
         });
         setTimeout(() => {
             const clearAreaBtn = document.getElementById('clear-all-area');
-            if (clearAreaBtn) clearAreaBtn.addEventListener('click', async () => {
-                if (confirm("Bạn có chắc muốn xóa TẤT CẢ cảnh báo khu vực?")) {
-                    await remove(areaBroadcastsRef);
-                    for (const id in areaLayers) {
-                        if (areaLayers[id]) {
-                            if (map && areaLayers[id].circle) map.removeLayer(areaLayers[id].circle);
-                            clearInterval(areaLayers[id].intervalId);
-                        }
-                    }
-                    areaLayers = {};
-                    alert("Đã xóa tất cả cảnh báo khu vực.");
-                }
-            });
+            if (clearAreaBtn) {
+                clearAreaBtn.addEventListener('click', clearAllAreaBroadcasts);
+            } else {
+                console.warn("Không tìm thấy nút clear-all-area");
+            }
         }, 500);
     }
 
@@ -866,12 +981,14 @@
                 if (arrowMode) {
                     arrowMode = false;
                     arrowToggle.style.background = '#ff0000';
+                    arrowToggle.style.color = 'white';
                     if (arrowTempLine) map.removeLayer(arrowTempLine);
                     arrowStart = null;
                     map.getContainer().style.cursor = '';
                 } else {
                     arrowMode = true;
                     arrowToggle.style.background = '#cc0000';
+                    arrowToggle.style.color = 'white';
                     map.getContainer().style.cursor = 'crosshair';
                     arrowStart = null;
                     if (arrowTempLine) map.removeLayer(arrowTempLine);
@@ -952,12 +1069,14 @@
     onValue(drawingsRef, (snapshot) => {
         const data = snapshot.val() || {};
         const currentIds = new Set(Object.keys(data));
+        // Xóa những layer không còn trong DB
         Object.keys(drawingLayers).forEach(id => {
             if (!currentIds.has(id)) {
                 map.removeLayer(drawingLayers[id]);
                 delete drawingLayers[id];
             }
         });
+        // (Nếu cần thêm mới thì xử lý ở đây, nhưng bạn đã có onChildAdded riêng)
     });
 
     // ==================== CÁC HÀM VẼ ====================
@@ -1000,7 +1119,7 @@
         if (drawFinish) drawFinish.style.display = 'none';
     }
 
-    // ==================== DIALOG THÊM ĐIỂM ====================
+    // ==================== DIALOG THÊM ĐIỂM (CÓ ĐƯỜNG NỐI VÀ MARKER VÀNG) ====================
     function showPointDialog(latlng) {
         if (drawingMode || arrowMode) return;
         const oldOverlay = document.getElementById('dialog-overlay');
@@ -1072,6 +1191,7 @@
                 } else {
                     const selectedOfficerUid = document.getElementById('officer-select')?.value;
                     if (!selectedOfficerUid) {
+                        // Không chọn cán bộ → tạo marker vàng
                         push(ref(db, 'markers/' + myUsername), {
                             created_by: myName,
                             lat: latlng.lat,
@@ -1099,6 +1219,17 @@
                         };
                         push(ref(db, 'move_orders'), orderData);
                         const selectName = document.querySelector('#officer-select option:checked')?.text;
+                        push(ref(db, 'logs'), {
+                            commander: myName,
+                            commanderId: myUsername,
+                            targetId: selectedOfficerUid,
+                            targetName: selectName,
+                            lat: latlng.lat,
+                            lng: latlng.lng,
+                            time: Date.now(),
+                            action: 'move_order',
+                            note: note
+                        });
                         const tempMarker = L.marker([latlng.lat, latlng.lng]).addTo(map);
                         tempMarker.bindPopup(`📍 Đã ra lệnh cho ${selectName}`).openPopup();
                         setTimeout(() => map.removeLayer(tempMarker), 5000);
@@ -1119,7 +1250,7 @@
         }
     }
 
-    // ==================== MOVE ORDERS ====================
+    // ==================== MOVE ORDERS (LẮNG NGHE VÀ VẼ ĐƯỜNG NỐI) ====================
     const moveOrdersRef = ref(db, 'move_orders');
     onChildAdded(moveOrdersRef, (snapshot) => {
         const order = snapshot.val();
@@ -1167,7 +1298,7 @@
     }
     setInterval(checkOrdersCompletion, 5000);
 
-    // ==================== MARKERS & INCIDENTS ====================
+    // ==================== MARKERS & INCIDENTS (ĐIỂM VÀNG VÀ ẢNH) ====================
     const markersRootRef = ref(db, 'markers');
     onChildAdded(markersRootRef, (userSnapshot) => {
         const userId = userSnapshot.key;
@@ -1219,7 +1350,7 @@
     });
     onChildRemoved(incidentsRef, (data) => { const id = data.key; if (incidentMarkers[id]) { map.removeLayer(incidentMarkers[id]); delete incidentMarkers[id]; } });
 
-    // ==================== RA LỆNH TỪ SIDEBAR ====================
+    // ==================== RA LỆNH TỪ SIDEBAR (giữ 5s) ====================
     if (userRole === 'commander' || userRole === 'admin') {
         function activateSelectionMode(officerId, officerName) {
             if (selectionMode) return;
@@ -1265,6 +1396,17 @@
                             note: ""
                         };
                         push(ref(db, 'move_orders'), orderData);
+                        push(ref(db, 'logs'), {
+                            commander: myName,
+                            commanderId: myUsername,
+                            targetId: selectedOfficerId,
+                            targetName: selectedOfficerName,
+                            lat: endLat,
+                            lng: endLng,
+                            time: Date.now(),
+                            action: 'move_order',
+                            note: ""
+                        });
                         const marker = L.marker([endLat, endLng]).addTo(map);
                         marker.bindPopup("📍 Đã chọn điểm (giữ 5s)").openPopup();
                         setTimeout(() => map.removeLayer(marker), 5000);
@@ -1297,7 +1439,7 @@
         }
     }
 
-    // ==================== NÚT KHÓA MÀN HÌNH & FOLLOW ====================
+    // ==================== NÚT KHÓA MÀN HÌNH ====================
     const lockBtn = document.getElementById("lockBtn");
     const lockOverlay = document.getElementById("lockOverlay");
     let isLocked = false;
@@ -1314,6 +1456,7 @@
         }
     };
 
+    // ==================== NÚT FOLLOW ME ====================
     const followBtn = document.getElementById("followBtn");
     followBtn.onclick = () => {
         followMe = !followMe;
@@ -1333,7 +1476,7 @@
         if (navigator.vibrate) navigator.vibrate(50);
     };
 
-    // ==================== SỰ KIỆN CONTEXT MENU ====================
+    // Gắn các sự kiện map (contextmenu, touch)
     map.on('contextmenu', (e) => {
         if (selectionMode || drawingMode || arrowMode) return;
         e.originalEvent.preventDefault();
@@ -1349,10 +1492,13 @@
     map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
     map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
 
-    // ==================== XÓA ĐƯỜNG CHỈ DẪN KHI XÓA MARKER ====================
+    <!-- ========== THÊM MỚI: Xóa đường chỉ dẫn khi click nút xóa marker ========== -->
     document.body.addEventListener('click', (e) => {
         if (e.target.classList && e.target.classList.contains('delete-btn')) {
-            clearDirectionLine();
+            if (typeof clearDirectionLine === 'function') {
+                clearDirectionLine();
+                console.log("[Map] Cleared direction line due to marker deletion");
+            }
         }
     });
 </script>
