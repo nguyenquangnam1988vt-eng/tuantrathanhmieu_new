@@ -326,6 +326,15 @@ def main():
                     else:
                         st.error("Không có vị trí hợp lệ")
 
+        # ==================== THÊM MỚI: NÚT XÓA ĐƯỜNG CHỈ DẪN ====================
+        if user_role == "officer":
+            st.markdown("---")
+            if st.button("🗺️ Xóa đường chỉ dẫn", key="clear_direction_btn"):
+                st.session_state.clear_direction = True
+                st.rerun()
+        else:
+            st.session_state.clear_direction = False
+
     # ==================== HỆ THỐNG CHO COMMANDER/ADMIN ====================
     if user_role in ["commander", "admin"]:
         st.sidebar.markdown('<div class="sidebar-group"><h3>⚙️ HỆ THỐNG</h3></div>', unsafe_allow_html=True)
@@ -446,6 +455,11 @@ def main():
     firebase_config = dict(st.secrets["firebase"])
     firebase_config_json = json.dumps(firebase_config)
 
+    # === THÊM MỚI: Lấy flag xóa đường từ session state ===
+    clear_direction_flag = st.session_state.get("clear_direction", False)
+    if clear_direction_flag:
+        st.session_state.clear_direction = False  # reset sau khi đọc
+
     # Xóa officers quá hạn lần cuối
     try:
         officers_old = db.child("officers").get().val()
@@ -492,6 +506,8 @@ def main():
     map_html = map_html.replace("{{ initial_officers }}", initial_officers_json)
     map_html = map_html.replace("{{ alert_sound_base64 }}", alert_sound_base64)
     map_html = map_html.replace("{{ fcm_vapid_key }}", fcm_vapid_key)
+    # === THÊM MỚI: Thay thế flag xóa đường ===
+    map_html = map_html.replace("{{ clear_direction }}", json.dumps(clear_direction_flag))
     map_html = map_html.replace("<!-- MAP_JS -->", map_js)
     map_html = map_html.replace("<!-- ALERTS_JS -->", alerts_js)
     map_html = map_html.replace("<!-- DRAW_JS -->", draw_js)
@@ -638,7 +654,6 @@ def main():
             grid_step = st.number_input("Kích thước ô lưới (độ)", min_value=0.01, max_value=0.2, value=0.02, step=0.01, format="%.2f", key="grid_step")
             st.caption(f"≈ {grid_step * 111:.1f} km mỗi ô")
         
-        # Tuỳ chọn vùng phân tích
         use_current_location = st.checkbox("Sử dụng vị trí hiện tại của tôi làm tâm", value=True)
         if not use_current_location:
             manual_lat = st.number_input("Vĩ độ tâm", value=16.047, format="%.4f")
@@ -657,7 +672,6 @@ def main():
         
         if st.session_state.get("run_analysis", False):
             params = st.session_state.analysis_params
-            # Lấy tâm
             if params['use_current']:
                 center_lat, center_lng = get_current_location(username)
                 if center_lat is None:
@@ -669,11 +683,9 @@ def main():
             
             with st.spinner("Đang tải dữ liệu track và incidents..."):
                 try:
-                    # Lấy dữ liệu
                     df_tracks = get_track_data(days_back=params['days'])
                     df_incidents = get_incident_data(days_back=params['days'])
                     
-                    # Lọc dữ liệu theo bán kính
                     radius_deg = params['radius_km'] / 111.0
                     lat_min = center_lat - radius_deg
                     lat_max = center_lat + radius_deg
@@ -692,11 +704,9 @@ def main():
                     if df_tracks.empty and df_incidents.empty:
                         st.warning("Không có dữ liệu track hoặc incident trong khu vực này.")
                     else:
-                        # Tạo lưới cục bộ
                         grid = create_grid_local(center_lat, center_lng, radius_km=params['radius_km'], step_deg=params['grid_step'])
                         analysis_df = analyze_patrol_coverage(df_tracks, df_incidents, grid, params['days'])
                         
-                        # Xác định tâm bản đồ
                         if not df_tracks.empty:
                             map_center_lat = df_tracks['lat'].mean()
                             map_center_lng = df_tracks['lng'].mean()
@@ -706,7 +716,6 @@ def main():
                         else:
                             map_center_lat, map_center_lng = center_lat, center_lng
                         
-                        # Bản đồ heatmap
                         st.subheader("🗺️ Bản đồ mật độ tuần tra và vụ việc")
                         m2 = folium.Map(location=[map_center_lat, map_center_lng], zoom_start=13)
                         
@@ -720,7 +729,6 @@ def main():
                         folium.LayerControl().add_to(m2)
                         st_folium(m2, width=700, height=500, key="map_analysis")
                         
-                        # Thống kê tổng quan
                         st.subheader("📈 Thống kê tổng quan")
                         col_a, col_b, col_c = st.columns(3)
                         with col_a:
@@ -732,7 +740,6 @@ def main():
                             high_risk_zones = len(analysis_df[analysis_df['risk_level'] == '🔥 Cao'])
                             st.metric("Số ô nguy cơ cao", high_risk_zones)
                         
-                        # Bảng các khu vực cần lưu ý
                         st.subheader("⚠️ Các khu vực cần tăng cường tuần tra")
                         alert_zones = analysis_df[
                             (analysis_df['patrol_status'].isin(['🔴 Bỏ trống', '🟡 Trung bình'])) & 
@@ -743,11 +750,9 @@ def main():
                         else:
                             st.success("✅ Không phát hiện khu vực bỏ trống có rủi ro cao.")
                         
-                        # Hiển thị toàn bộ bảng phân tích
                         with st.expander("📋 Xem toàn bộ phân tích các ô lưới"):
                             st.dataframe(analysis_df)
                         
-                        # Tải CSV
                         csv = analysis_df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Tải kết quả phân tích (CSV)", csv, f"patrol_analysis_{params['days']}days_radius{params['radius_km']}km.csv", "text/csv")
                         
@@ -756,7 +761,6 @@ def main():
                     logger.error(f"Analysis error: {e}")
                     st.session_state.run_analysis = False
             
-            # Nút để reset phân tích (tùy chọn)
             if st.button("🗑️ Xóa kết quả phân tích"):
                 st.session_state.run_analysis = False
                 if "analysis_result" in st.session_state:
