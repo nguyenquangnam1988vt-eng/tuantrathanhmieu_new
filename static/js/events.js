@@ -368,13 +368,3 @@ if (userRole === 'commander' || userRole === 'admin') {
         }, 200);
     }
 }
-
-// ==================== BỔ SUNG: XÓA ĐƯỜNG CHỈ DẪN KHI NHẤN NÚT XÓA MARKER ====================
-document.body.addEventListener('click', (e) => {
-    if (e.target.classList && e.target.classList.contains('delete-btn')) {
-        if (typeof window.clearDirectionLine === 'function') {
-            window.clearDirectionLine();
-            console.log("[Events] Cleared direction line due to marker deletion");
-        }
-    }
-});
