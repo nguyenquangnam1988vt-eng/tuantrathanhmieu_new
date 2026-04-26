@@ -385,6 +385,23 @@
         return (Math.atan2(y, x) * 180/Math.PI + 360) % 360;
     }
 
+    function startBlinking(polyline, originalColor, duration = 3000) {
+        if (polyline._blinkInterval) clearInterval(polyline._blinkInterval);
+        const startTime = Date.now();
+        const interval = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            if (elapsed >= duration) {
+                clearInterval(interval);
+                polyline.setStyle({ color: originalColor, opacity: 0.8 });
+                polyline._blinkInterval = null;
+            } else {
+                const isEven = Math.floor(elapsed / 150) % 2 === 0;
+                polyline.setStyle({ color: isEven ? '#ffff00' : originalColor, opacity: 1 });
+            }
+        }, 150);
+        polyline._blinkInterval = interval;
+    }
+
     function initAudioAlert() {
         if (alertSound) return;
         alertSound = new Audio("data:audio/mp3;base64," + alertSoundBase64);
@@ -950,6 +967,18 @@
 
     // ==================== DRAWINGS LISTENER ====================
     const drawingsRef = ref(db, 'drawings');
+    // Lắng nghe sự thay đổi của trường blink trong mỗi drawing
+    onChildChanged(ref(db, 'drawings'), async (snapshot) => {
+        const id = snapshot.key;
+        const drawing = snapshot.val();
+        if (drawing && drawing.blink && drawing.blink.active === true) {
+            const polyline = drawingLayers[id];
+            if (polyline) {
+                const originalColor = drawing.color || '#00aaff';
+                startBlinking(polyline, originalColor, 20000); // 20 giây
+            }
+        }
+    });
     document.addEventListener('click', async (e) => {
         if (e.target && e.target.classList.contains('delete-drawing')) {
             const id = e.target.getAttribute('data-id');
