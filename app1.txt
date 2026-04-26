@@ -553,6 +553,18 @@ def main():
             st.info("Chưa có log hôm nay. Hãy thực hiện một số thao tác để tạo log.")
         if st.button("🔄 Tải lại log"):
             st.rerun()
+    
+        # ========== THÊM EXPANDER NÀY ==========
+        with st.expander("📜 Nhật ký tương tác mũi tên"):
+            if st.button("Tải log mũi tên"):
+                logs = db.child("arrow_logs").get().val()
+                if logs:
+                    df_logs = pd.DataFrame.from_dict(logs, orient='index')
+                    df_logs = df_logs.sort_values('timestamp', ascending=False)
+                    st.dataframe(df_logs)
+                else:
+                    st.info("Chưa có log nào.")
+        # ======================================
 
     with tab4:
         st.subheader("🔥 Phân tích điểm nóng từ dữ liệu sự cố")
