@@ -1653,41 +1653,42 @@
                     await remove(ref(db, 'drawings/' + id));
                 }
             }
-        } else if (e.target && e.target.classList.contains('blink-drawing')) {
+        else if (e.target && e.target.classList.contains('blink-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
             const drawingSnap = await get(ref(db, 'drawings/' + id));
             const drawing = drawingSnap.val();
             if (drawing && drawing.type === 'arrow_guide') {
-                const polyline = drawingLayers[id];
-                if (polyline) {
-                    let blinkCount = 0;
-                    const originalColor = drawing.color || '#00aaff';
-                    const blinkInterval = setInterval(() => {
-                        if (blinkCount >= 20) {  // 10 lần nhấp nháy (mỗi lần 2 màu)
-                            clearInterval(blinkInterval);
-                            polyline.setStyle({ color: originalColor, opacity: 0.8 });
-                        } else {
-                            const newColor = blinkCount % 2 === 0 ? '#ffff00' : originalColor;
-                            polyline.setStyle({ color: newColor, opacity: 1 });
-                            blinkCount++;
-                        }
-                    }, 300);
-                    await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
-                    const center = polyline.getBounds().getCenter();
+                // Ghi trạng thái blink vào Firebase (sẽ tự xóa sau 20 giây)
+                const blinkRef = ref(db, `drawings/${id}/blink`);
+                await set(blinkRef, {
+                    active: true,
+                    startedBy: myUsername,
+                    startedByName: myName,
+                    timestamp: Date.now()
+                });
+                // Tự động xóa blink state sau 20 giây
+                setTimeout(async () => {
+                    const current = (await get(blinkRef)).val();
+                    if (current && current.timestamp === (await get(blinkRef)).val()?.timestamp) {
+                        await remove(blinkRef);
+                    }
+                }, 20000);
+                // Ghi log
+                await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
+                // Hiển thị popup thông báo (chỉ local, không đồng bộ)
+                if (drawingLayers[id]) {
+                    const center = drawingLayers[id].getBounds().getCenter();
                     L.popup()
                         .setLatLng(center)
                         .setContent(`🚦 ${myName} đã báo đoàn đang đi trên mũi tên này`)
                         .openOn(map);
-                    setTimeout(() => map.closePopup(), 3000);
-                } else {
-                    alert("Không tìm thấy đường vẽ để nhấp nháy");
+                    setTimeout(() => map.closePopup(), 5000);
                 }
             } else {
                 alert("Chỉ có thể nhấp nháy trên mũi tên hướng dẫn");
             }
         }
-    });
     
 </script>
 </body>
