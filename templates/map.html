@@ -1451,12 +1451,11 @@
     map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
     map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
     
-    // ==================== GUIDE ARROW (CHỈ COMMANDER) - DÙNG POLYLINEDECORATOR ====================
+    // ==================== GUIDE ARROW (CHỈ COMMANDER) ====================
     if (userRole === 'commander') {
         let guideDrawingMode = false;
         let guideTempPoints = [];
         let guideTempPolyline = null;
-        let guideTempDecorator = null;
     
         const guideToolbar = L.control({ position: 'topright' });
         guideToolbar.onAdd = () => {
@@ -1469,6 +1468,7 @@
                 </div>
             `;
             L.DomEvent.disableClickPropagation(div);
+            // Gán sự kiện sau khi DOM render
             setTimeout(() => {
                 const toggleBtn = div.querySelector('#guide-arrow-toggle');
                 const finishBtn = div.querySelector('#guide-arrow-finish');
@@ -1478,6 +1478,7 @@
                         if (guideDrawingMode) {
                             cancelGuideDrawing();
                         } else {
+                            // Tắt chế độ vẽ thường nếu đang bật
                             if (drawingMode) {
                                 drawingMode = false;
                                 const drawToggle = document.getElementById('draw-toggle');
@@ -1498,8 +1499,6 @@
                     finishBtn.addEventListener('click', () => {
                         if (guideDrawingMode && guideTempPoints.length >= 2) {
                             saveGuideDrawing();
-                        } else {
-                            alert("Cần ít nhất 2 điểm để vẽ.");
                         }
                         guideDrawingMode = false;
                         if (toggleBtn) toggleBtn.style.background = '#00aaff';
@@ -1525,46 +1524,45 @@
         function startGuideDrawing() {
             guideTempPoints = [];
             if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            if (guideTempDecorator) map.removeLayer(guideTempDecorator);
             map.on('click', onGuideMapClick);
             map.getContainer().style.cursor = 'crosshair';
         }
     
         function cancelGuideDrawing() {
             map.off('click', onGuideMapClick);
-            if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            if (guideTempDecorator) map.removeLayer(guideTempDecorator);
+            if (guideTempPolyline) {
+                map.removeLayer(guideTempPolyline);
+                guideTempPolyline = null;
+            }
             guideTempPoints = [];
-            guideTempPolyline = null;
-            guideTempDecorator = null;
             map.getContainer().style.cursor = '';
             guideDrawingMode = false;
         }
     
-        function updateDecorator(points) {
-            if (guideTempDecorator) map.removeLayer(guideTempDecorator);
-            if (points.length < 2) return;
-            const basePolyline = L.polyline(points);
-            guideTempDecorator = L.polylineDecorator(basePolyline, {
-                patterns: [{
-                    offset: 0,
-                    repeat: 40,  // khoảng cách giữa các mũi tên (px)
-                    symbol: L.Symbol.arrowHead({
-                        pixelSize: 15,
-                        polygon: false,
-                        pathOptions: { color: '#00aaff', weight: 3, fill: true, fillOpacity: 0.8 }
-                    })
-                }]
-            }).addTo(map);
-        }
-    
         function onGuideMapClick(e) {
             if (!guideDrawingMode) return;
+        
             const { lat, lng } = e.latlng;
             guideTempPoints.push([lat, lng]);
-            if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            guideTempPolyline = L.polyline(guideTempPoints, { color: '#00aaff', weight: 4, opacity: 0.8 }).addTo(map);
-            updateDecorator(guideTempPoints);
+        
+            if (!guideTempPolyline) {
+                guideTempPolyline = L.polyline([], {
+                    color: '#00aaff',
+                    weight: 5,
+                    opacity: 0.9
+                }).addTo(map);
+            }
+        
+            guideTempPolyline.setLatLngs(guideTempPoints);
+        
+            // gọi lại arrowheads
+            guideTempPolyline.arrowheads({
+                size: '20px',
+                frequency: '80px',
+                yawn: 60,
+                fill: true,
+                color: '#00aaff'
+            });
         }
     
         function saveGuideDrawing() {
@@ -1579,7 +1577,7 @@
                 author: myName,
                 authorId: myUsername,
                 timestamp: Date.now(),
-                type: 'arrow_guide_decorator'
+                type: 'arrow_guide'
             };
             push(ref(db, 'drawings'), drawingData);
             cancelGuideDrawing();
@@ -1600,11 +1598,34 @@
         console.log(`[Log] ${action} on arrow ${drawingId} by ${userName}`);
     }
     
-    // ==================== DRAWINGS LISTENER (HỖ TRỢ DECORATOR) ====================
-
+    // ==================== CẬP NHẬT DRAWINGS LISTENER (THÊM NÚT BLINK & XÓA LOG) ====================
+    // Ghi đè hoặc bổ sung xử lý cho drawings (để tránh trùng, ta sẽ xóa listener cũ và thêm mới)
+    // Lưu ý: Trong code hiện tại đã có onChildAdded và onValue cho drawingsRef.
+    // Ta sẽ thêm logic blink và xóa có log vào phần xử lý click và popup.
+    // Cách an toàn: Giữ nguyên listener cũ, chỉ bổ sung sự kiện click cho nút blink.
+    // Đoạn dưới đây sẽ thêm nút blink vào popup của các drawing có type === 'arrow_guide'
+    
+    // Hàm cập nhật lại popup cho drawing (gọi sau khi thêm)
+    function updateDrawingPopupWithBlink(drawingId, drawing, polyline) {
+        if (!polyline) return;
+        let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
+        const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
+        if (canDelete) {
+            popupContent += `<br><button class="delete-drawing" data-id="${drawingId}">🗑️ Xóa nét vẽ</button>`;
+        }
+        if (drawing.type === 'arrow_guide' && (userRole === 'commander' || userRole === 'officer')) {
+            popupContent += `<br><button class="blink-drawing" data-id="${drawingId}" style="background:#ffaa00; margin-top:5px;">🚦 Báo đoàn đang đi (nhấp nháy)</button>`;
+        }
+        polyline.bindPopup(popupContent);
+    }
+    
+    // Ghi đè một phần onChildAdded cho drawingsRef để thêm nút blink
+    const originalOnChildAdded = drawingsRef.onChildAdded;
+    // Remove existing listeners để tránh trùng (tạm thời)
     off(drawingsRef, 'child_added');
     off(drawingsRef, 'value');
     
+    // Đăng ký lại một cách an toàn
     onChildAdded(drawingsRef, (snapshot) => {
         if (!map) return;
         const id = snapshot.key;
@@ -1617,34 +1638,23 @@
             weight: drawing.weight || 3,
             opacity: 0.8
         }).addTo(map);
-        
-        let decorator = null;
-        // Nếu là loại arrow_guide_decorator thì tạo pattern mũi tên dọc đường
-        if (drawing.type === 'arrow_guide_decorator') {
-            decorator = L.polylineDecorator(polyline, {
-                patterns: [{
-                    offset: 0,
-                    repeat: 40,
-                    symbol: L.Symbol.arrowHead({
-                        pixelSize: 15,
-                        polygon: false,
-                        pathOptions: { color: drawing.color || '#00aaff', weight: 3, fill: true, fillOpacity: 0.8 }
-                    })
-                }]
-            }).addTo(map);
+        if (drawing.type === 'arrow' && polyline.arrowheads) {
+            polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         }
-        
+        if (drawing.type === 'arrow_guide' && polyline.arrowheads) {
+            polyline.arrowheads({ size: '20px', frequency: '80px', color: drawing.color || '#00aaff' });
+        }
+        // Tạo popup với nút blink
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
         const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
         if (canDelete) {
             popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa nét vẽ</button>`;
         }
-        if (drawing.type === 'arrow_guide_decorator' && (userRole === 'commander' || userRole === 'officer')) {
+        if (drawing.type === 'arrow_guide' && (userRole === 'commander' || userRole === 'officer')) {
             popupContent += `<br><button class="blink-drawing" data-id="${id}" style="background:#ffaa00; margin-top:5px;">🚦 Báo đoàn đang đi (nhấp nháy)</button>`;
         }
         polyline.bindPopup(popupContent);
-        
-        drawingLayers[id] = { polyline, decorator };
+        drawingLayers[id] = polyline;
     });
     
     onValue(drawingsRef, (snapshot) => {
@@ -1652,8 +1662,7 @@
         const currentIds = new Set(Object.keys(data));
         Object.keys(drawingLayers).forEach(id => {
             if (!currentIds.has(id)) {
-                if (drawingLayers[id].polyline) map.removeLayer(drawingLayers[id].polyline);
-                if (drawingLayers[id].decorator) map.removeLayer(drawingLayers[id].decorator);
+                if (map && drawingLayers[id]) map.removeLayer(drawingLayers[id]);
                 delete drawingLayers[id];
             }
         });
@@ -1661,12 +1670,13 @@
     
     // Xử lý sự kiện blink và xóa có log
     document.addEventListener('click', async (e) => {
+        // Xóa nét vẽ (kể cả arrow_guide và thường)
         if (e.target && e.target.classList.contains('delete-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
             const drawingSnap = await get(ref(db, 'drawings/' + id));
             const drawing = drawingSnap.val();
-            if (drawing && drawing.type === 'arrow_guide_decorator') {
+            if (drawing && drawing.type === 'arrow_guide') {
                 if (confirm(`Xóa mũi tên hướng dẫn này? (Hành động sẽ được ghi log)`)) {
                     await logArrowInteraction('delete', id, drawing.author, myUsername, myName);
                     await remove(ref(db, 'drawings/' + id));
@@ -1677,43 +1687,38 @@
                 }
             }
         }
+        // Nhấp nháy mũi tên xanh
         else if (e.target && e.target.classList.contains('blink-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
             const drawingSnap = await get(ref(db, 'drawings/' + id));
             const drawing = drawingSnap.val();
-            if (drawing && drawing.type === 'arrow_guide_decorator') {
-                const layer = drawingLayers[id];
-                const polyline = layer ? layer.polyline : null;
-                if (polyline) {
-                    let blinkCount = 0;
-                    const originalColor = drawing.color || '#00aaff';
-                    const blinkInterval = setInterval(() => {
-                        if (blinkCount >= 20) {
-                            clearInterval(blinkInterval);
-                            polyline.setStyle({ color: originalColor, opacity: 0.8 });
-                            if (layer.decorator) {
-                                const patterns = layer.decorator.options.patterns;
-                                patterns[0].symbol.options.pathOptions.color = originalColor;
-                                layer.decorator.setPatterns(patterns);
-                            }
-                        } else {
-                            const newColor = blinkCount % 2 === 0 ? '#ffff00' : originalColor;
-                            polyline.setStyle({ color: newColor, opacity: 1 });
-                            if (layer.decorator) {
-                                const patterns = layer.decorator.options.patterns;
-                                patterns[0].symbol.options.pathOptions.color = newColor;
-                                layer.decorator.setPatterns(patterns);
-                            }
-                            blinkCount++;
-                        }
-                    }, 300);
-                    await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
-                    const center = polyline.getBounds().getCenter();
-                    L.popup().setLatLng(center).setContent(`🚦 ${myName} đã báo đoàn đang đi trên mũi tên này`).openOn(map);
-                    setTimeout(() => map.closePopup(), 3000);
-                } else {
-                    alert("Không tìm thấy đường vẽ để nhấp nháy");
+            if (drawing && drawing.type === 'arrow_guide') {
+                // Ghi trạng thái blink vào Firebase (sẽ tự xóa sau 20 giây)
+                const blinkRef = ref(db, `drawings/${id}/blink`);
+                await set(blinkRef, {
+                    active: true,
+                    startedBy: myUsername,
+                    startedByName: myName,
+                    timestamp: Date.now()
+                });
+                // Tự động xóa blink state sau 20 giây
+                setTimeout(async () => {
+                    const current = (await get(blinkRef)).val();
+                    if (current && current.timestamp === (await get(blinkRef)).val()?.timestamp) {
+                        await remove(blinkRef);
+                    }
+                }, 20000);
+                // Ghi log
+                await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
+                // Hiển thị popup thông báo (chỉ local, không đồng bộ)
+                if (drawingLayers[id]) {
+                    const center = drawingLayers[id].getBounds().getCenter();
+                    L.popup()
+                        .setLatLng(center)
+                        .setContent(`🚦 ${myName} đã báo đoàn đang đi trên mũi tên này`)
+                        .openOn(map);
+                    setTimeout(() => map.closePopup(), 5000);
                 }
             } else {
                 alert("Chỉ có thể nhấp nháy trên mũi tên hướng dẫn");
