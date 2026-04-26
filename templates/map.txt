@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.geometryutil@0.5.0/src/leaflet.geometryutil.js"></script>
-    <script src="https://unpkg.com/leaflet-arrowheads@1.2.0/dist/leaflet-arrowheads.js"></script>
+    <script src="https://unpkg.com/leaflet-arrowheads@1.0.6/lib/leaflet-arrowheads.js"></script>
     <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet-polylinedecorator.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
@@ -1545,24 +1545,40 @@
             const { lat, lng } = e.latlng;
             guideTempPoints.push([lat, lng]);
         
-            if (!guideTempPolyline) {
-                guideTempPolyline = L.polyline([], {
-                    color: '#00aaff',
-                    weight: 5,
-                    opacity: 0.9
-                }).addTo(map);
+            if (guideTempPolyline) {
+                map.removeLayer(guideTempPolyline);
             }
         
-            guideTempPolyline.setLatLngs(guideTempPoints);
+            guideTempPolyline = L.polyline(guideTempPoints, {
+                color: '#00aaff',
+                weight: 5,
+                opacity: 0.9
+            }).addTo(map);
         
-            // gọi lại arrowheads
-            guideTempPolyline.arrowheads({
-                size: '20px',
-                frequency: '80px',
-                yawn: 60,
-                fill: true,
-                color: '#00aaff'
-            });
+            // XÓA arrowheads, dùng decorator thay thế
+            if (guideTempDecorator) {
+                map.removeLayer(guideTempDecorator);
+            }
+        
+            if (guideTempPoints.length >= 2) {
+                const line = L.polyline(guideTempPoints);
+        
+                guideTempDecorator = L.polylineDecorator(line, {
+                    patterns: [{
+                        offset: 0,
+                        repeat: 40,
+                        symbol: L.Symbol.arrowHead({
+                            pixelSize: 15,
+                            polygon: true,   // 👈 QUAN TRỌNG: true = tam giác
+                            pathOptions: {
+                                color: '#00aaff',
+                                fill: true,
+                                weight: 2
+                            }
+                        })
+                    }]
+                }).addTo(map);
+            }
         }
     
         function saveGuideDrawing() {
@@ -1599,12 +1615,7 @@
     }
     
     // ==================== CẬP NHẬT DRAWINGS LISTENER (THÊM NÚT BLINK & XÓA LOG) ====================
-    // Ghi đè hoặc bổ sung xử lý cho drawings (để tránh trùng, ta sẽ xóa listener cũ và thêm mới)
-    // Lưu ý: Trong code hiện tại đã có onChildAdded và onValue cho drawingsRef.
-    // Ta sẽ thêm logic blink và xóa có log vào phần xử lý click và popup.
-    // Cách an toàn: Giữ nguyên listener cũ, chỉ bổ sung sự kiện click cho nút blink.
-    // Đoạn dưới đây sẽ thêm nút blink vào popup của các drawing có type === 'arrow_guide'
-    
+   
     // Hàm cập nhật lại popup cho drawing (gọi sau khi thêm)
     function updateDrawingPopupWithBlink(drawingId, drawing, polyline) {
         if (!polyline) return;
@@ -1642,7 +1653,13 @@
             polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         }
         if (drawing.type === 'arrow_guide' && polyline.arrowheads) {
-            polyline.arrowheads({ size: '20px', frequency: '80px', color: drawing.color || '#00aaff' });
+            polyline.arrowheads({
+                size: '20px',
+                frequency: '80px',
+                yawn: 60,
+                fill: true,
+                color: drawing.color || '#00aaff'
+            });
         }
         // Tạo popup với nút blink
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
