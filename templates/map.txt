@@ -1005,7 +1005,7 @@
         const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
         if (canDelete) popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa nét vẽ</button>`;
         polyline.bindPopup(popupContent);
-        drawingLayers[id] = polyline;
+        drawingLayers[id] = { polyline, decorator };
     });
     onValue(drawingsRef, (snapshot) => {
         const data = snapshot.val() || {};
@@ -1013,7 +1013,8 @@
         // Xóa những layer không còn trong DB
         Object.keys(drawingLayers).forEach(id => {
             if (!currentIds.has(id)) {
-                map.removeLayer(drawingLayers[id]);
+                if (drawingLayers[id].polyline) map.removeLayer(drawingLayers[id].polyline);
+                if (drawingLayers[id].decorator) map.removeLayer(drawingLayers[id].decorator);
                 delete drawingLayers[id];
             }
         });
@@ -1450,12 +1451,11 @@
     map.on('touchend', () => { if (touchTimer) clearTimeout(touchTimer); });
     map.on('touchcancel', () => { if (touchTimer) clearTimeout(touchTimer); });
     
-    // ==================== GUIDE ARROW (CHỈ COMMANDER) - VẼ TAM GIÁC TẠI ĐIỂM CUỐI ====================
+    // ==================== GUIDE ARROW (CHỈ COMMANDER) ====================
     if (userRole === 'commander') {
         let guideDrawingMode = false;
         let guideTempPoints = [];
         let guideTempPolyline = null;
-        let guideTempTriangle = null;
     
         const guideToolbar = L.control({ position: 'topright' });
         guideToolbar.onAdd = () => {
@@ -1468,6 +1468,7 @@
                 </div>
             `;
             L.DomEvent.disableClickPropagation(div);
+            // Gán sự kiện sau khi DOM render
             setTimeout(() => {
                 const toggleBtn = div.querySelector('#guide-arrow-toggle');
                 const finishBtn = div.querySelector('#guide-arrow-finish');
@@ -1477,6 +1478,7 @@
                         if (guideDrawingMode) {
                             cancelGuideDrawing();
                         } else {
+                            // Tắt chế độ vẽ thường nếu đang bật
                             if (drawingMode) {
                                 drawingMode = false;
                                 const drawToggle = document.getElementById('draw-toggle');
@@ -1497,8 +1499,6 @@
                     finishBtn.addEventListener('click', () => {
                         if (guideDrawingMode && guideTempPoints.length >= 2) {
                             saveGuideDrawing();
-                        } else {
-                            alert("Cần ít nhất 2 điểm để vẽ.");
                         }
                         guideDrawingMode = false;
                         if (toggleBtn) toggleBtn.style.background = '#00aaff';
@@ -1524,64 +1524,45 @@
         function startGuideDrawing() {
             guideTempPoints = [];
             if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            if (guideTempTriangle) map.removeLayer(guideTempTriangle);
             map.on('click', onGuideMapClick);
             map.getContainer().style.cursor = 'crosshair';
         }
     
         function cancelGuideDrawing() {
             map.off('click', onGuideMapClick);
-            if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            if (guideTempTriangle) map.removeLayer(guideTempTriangle);
+            if (guideTempPolyline) {
+                map.removeLayer(guideTempPolyline);
+                guideTempPolyline = null;
+            }
             guideTempPoints = [];
-            guideTempPolyline = null;
-            guideTempTriangle = null;
             map.getContainer().style.cursor = '';
-        }
-    
-        // Hàm vẽ tam giác đều (to hơn) dùng chung
-        function addTriangleArrow(points, color = '#00aaff') {
-            if (!points || points.length < 2) return null;
-            const p1 = points[points.length - 2];
-            const p2 = points[points.length - 1];
-            const lat1 = p1[0], lng1 = p1[1];
-            const lat2 = p2[0], lng2 = p2[1];
-            const bearing = getBearing(lat1, lng1, lat2, lng2);
-            const rad = bearing * Math.PI / 180;
-            const size = 35; // kích thước tam giác (mét) - to hơn
-            const angle = 60; // góc nhọn
-            const halfWidth = size * Math.sin(angle * Math.PI/180 / 2);
-            const height = size * Math.cos(angle * Math.PI/180 / 2);
-            
-            const tip = [lat2, lng2];
-            const backRad = rad + Math.PI;
-            const baseCenterLat = lat2 + (height / 111320) * Math.cos(backRad);
-            const baseCenterLng = lng2 + (height / 111320) * Math.sin(backRad) / Math.cos(lat2 * Math.PI/180);
-            const perpRad = rad + Math.PI/2;
-            const leftLat = baseCenterLat + (halfWidth / 111320) * Math.cos(perpRad);
-            const leftLng = baseCenterLng + (halfWidth / 111320) * Math.sin(perpRad) / Math.cos(baseCenterLat * Math.PI/180);
-            const rightLat = baseCenterLat - (halfWidth / 111320) * Math.cos(perpRad);
-            const rightLng = baseCenterLng - (halfWidth / 111320) * Math.sin(perpRad) / Math.cos(baseCenterLat * Math.PI/180);
-            
-            return L.polygon([[tip, [leftLat, leftLng], [rightLat, rightLng]]], {
-                color: color,
-                fillColor: color,
-                fillOpacity: 0.8,
-                weight: 2
-            });
+            guideDrawingMode = false;
         }
     
         function onGuideMapClick(e) {
             if (!guideDrawingMode) return;
+        
             const { lat, lng } = e.latlng;
             guideTempPoints.push([lat, lng]);
-            if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            guideTempPolyline = L.polyline(guideTempPoints, { color: '#00aaff', weight: 5, opacity: 0.9 }).addTo(map);
-            if (guideTempTriangle) map.removeLayer(guideTempTriangle);
-            if (guideTempPoints.length >= 2) {
-                guideTempTriangle = addTriangleArrow(guideTempPoints);
-                if (guideTempTriangle) guideTempTriangle.addTo(map);
+        
+            if (!guideTempPolyline) {
+                guideTempPolyline = L.polyline([], {
+                    color: '#00aaff',
+                    weight: 5,
+                    opacity: 0.9
+                }).addTo(map);
             }
+        
+            guideTempPolyline.setLatLngs(guideTempPoints);
+        
+            // gọi lại arrowheads
+            guideTempPolyline.arrowheads({
+                size: '20px',
+                frequency: '80px',
+                yawn: 60,
+                fill: true,
+                color: '#00aaff'
+            });
         }
     
         function saveGuideDrawing() {
@@ -1592,7 +1573,7 @@
             const drawingData = {
                 points: guideTempPoints.map(p => ({ lat: p[0], lng: p[1] })),
                 color: '#00aaff',
-                weight: 5,
+                weight: 4,
                 author: myName,
                 authorId: myUsername,
                 timestamp: Date.now(),
@@ -1617,14 +1598,34 @@
         console.log(`[Log] ${action} on arrow ${drawingId} by ${userName}`);
     }
     
-    // ==================== DRAWINGS LISTENER (THÊM TAM GIÁC, BLINK & XÓA LOG) ====================
-    const drawingsRef = ref(db, 'drawings');
+    // ==================== CẬP NHẬT DRAWINGS LISTENER (THÊM NÚT BLINK & XÓA LOG) ====================
+    // Ghi đè hoặc bổ sung xử lý cho drawings (để tránh trùng, ta sẽ xóa listener cũ và thêm mới)
+    // Lưu ý: Trong code hiện tại đã có onChildAdded và onValue cho drawingsRef.
+    // Ta sẽ thêm logic blink và xóa có log vào phần xử lý click và popup.
+    // Cách an toàn: Giữ nguyên listener cũ, chỉ bổ sung sự kiện click cho nút blink.
+    // Đoạn dưới đây sẽ thêm nút blink vào popup của các drawing có type === 'arrow_guide'
     
-    // Xóa listener cũ để tránh trùng
+    // Hàm cập nhật lại popup cho drawing (gọi sau khi thêm)
+    function updateDrawingPopupWithBlink(drawingId, drawing, polyline) {
+        if (!polyline) return;
+        let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
+        const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
+        if (canDelete) {
+            popupContent += `<br><button class="delete-drawing" data-id="${drawingId}">🗑️ Xóa nét vẽ</button>`;
+        }
+        if (drawing.type === 'arrow_guide' && (userRole === 'commander' || userRole === 'officer')) {
+            popupContent += `<br><button class="blink-drawing" data-id="${drawingId}" style="background:#ffaa00; margin-top:5px;">🚦 Báo đoàn đang đi (nhấp nháy)</button>`;
+        }
+        polyline.bindPopup(popupContent);
+    }
+    
+    // Ghi đè một phần onChildAdded cho drawingsRef để thêm nút blink
+    const originalOnChildAdded = drawingsRef.onChildAdded;
+    // Remove existing listeners để tránh trùng (tạm thời)
     off(drawingsRef, 'child_added');
     off(drawingsRef, 'value');
     
-    // Đăng ký lại listener với tam giác và blink
+    // Đăng ký lại một cách an toàn
     onChildAdded(drawingsRef, (snapshot) => {
         if (!map) return;
         const id = snapshot.key;
@@ -1637,17 +1638,13 @@
             weight: drawing.weight || 3,
             opacity: 0.8
         }).addTo(map);
-        
-        // Vẽ tam giác nếu là arrow_guide
-        let triangle = null;
-        if (drawing.type === 'arrow_guide') {
-            const pointsForTriangle = drawing.points.map(p => [p.lat, p.lng]);
-            if (pointsForTriangle.length >= 2) {
-                triangle = addTriangleArrow(pointsForTriangle, drawing.color || '#00aaff');
-                if (triangle) triangle.addTo(map);
-            }
+        if (drawing.type === 'arrow' && polyline.arrowheads) {
+            polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         }
-        
+        if (drawing.type === 'arrow_guide' && polyline.arrowheads) {
+            polyline.arrowheads({ size: '20px', frequency: '80px', color: drawing.color || '#00aaff' });
+        }
+        // Tạo popup với nút blink
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
         const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
         if (canDelete) {
@@ -1657,8 +1654,7 @@
             popupContent += `<br><button class="blink-drawing" data-id="${id}" style="background:#ffaa00; margin-top:5px;">🚦 Báo đoàn đang đi (nhấp nháy)</button>`;
         }
         polyline.bindPopup(popupContent);
-        
-        drawingLayers[id] = { polyline, triangle };
+        drawingLayers[id] = polyline;
     });
     
     onValue(drawingsRef, (snapshot) => {
@@ -1666,15 +1662,15 @@
         const currentIds = new Set(Object.keys(data));
         Object.keys(drawingLayers).forEach(id => {
             if (!currentIds.has(id)) {
-                if (drawingLayers[id].polyline) map.removeLayer(drawingLayers[id].polyline);
-                if (drawingLayers[id].triangle) map.removeLayer(drawingLayers[id].triangle);
+                if (map && drawingLayers[id]) map.removeLayer(drawingLayers[id]);
                 delete drawingLayers[id];
             }
         });
     });
     
-    // Xử lý sự kiện blink và xóa có log (chỉ một listener duy nhất)
+    // Xử lý sự kiện blink và xóa có log
     document.addEventListener('click', async (e) => {
+        // Xóa nét vẽ (kể cả arrow_guide và thường)
         if (e.target && e.target.classList.contains('delete-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
@@ -1691,38 +1687,38 @@
                 }
             }
         }
+        // Nhấp nháy mũi tên xanh
         else if (e.target && e.target.classList.contains('blink-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
             const drawingSnap = await get(ref(db, 'drawings/' + id));
             const drawing = drawingSnap.val();
             if (drawing && drawing.type === 'arrow_guide') {
-                const layer = drawingLayers[id];
-                const polyline = layer ? layer.polyline : null;
-                if (polyline) {
-                    let blinkCount = 0;
-                    const originalColor = drawing.color || '#00aaff';
-                    const blinkInterval = setInterval(() => {
-                        if (blinkCount >= 20) {
-                            clearInterval(blinkInterval);
-                            polyline.setStyle({ color: originalColor, opacity: 0.8 });
-                            if (layer.triangle) layer.triangle.setStyle({ color: originalColor, fillColor: originalColor });
-                        } else {
-                            const newColor = blinkCount % 2 === 0 ? '#ffff00' : originalColor;
-                            polyline.setStyle({ color: newColor, opacity: 1 });
-                            if (layer.triangle) layer.triangle.setStyle({ color: newColor, fillColor: newColor });
-                            blinkCount++;
-                        }
-                    }, 300);
-                    await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
-                    const center = polyline.getBounds().getCenter();
+                // Ghi trạng thái blink vào Firebase (sẽ tự xóa sau 20 giây)
+                const blinkRef = ref(db, `drawings/${id}/blink`);
+                await set(blinkRef, {
+                    active: true,
+                    startedBy: myUsername,
+                    startedByName: myName,
+                    timestamp: Date.now()
+                });
+                // Tự động xóa blink state sau 20 giây
+                setTimeout(async () => {
+                    const current = (await get(blinkRef)).val();
+                    if (current && current.timestamp === (await get(blinkRef)).val()?.timestamp) {
+                        await remove(blinkRef);
+                    }
+                }, 20000);
+                // Ghi log
+                await logArrowInteraction('blink', id, drawing.author, myUsername, myName);
+                // Hiển thị popup thông báo (chỉ local, không đồng bộ)
+                if (drawingLayers[id]) {
+                    const center = drawingLayers[id].getBounds().getCenter();
                     L.popup()
                         .setLatLng(center)
                         .setContent(`🚦 ${myName} đã báo đoàn đang đi trên mũi tên này`)
                         .openOn(map);
-                    setTimeout(() => map.closePopup(), 3000);
-                } else {
-                    alert("Không tìm thấy đường vẽ để nhấp nháy");
+                    setTimeout(() => map.closePopup(), 5000);
                 }
             } else {
                 alert("Chỉ có thể nhấp nháy trên mũi tên hướng dẫn");
