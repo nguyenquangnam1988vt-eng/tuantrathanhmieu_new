@@ -1667,6 +1667,7 @@
     
     // Xử lý sự kiện blink và xóa có log
     document.addEventListener('click', async (e) => {
+        // Xóa nét vẽ (kể cả arrow_guide và thường)
         if (e.target && e.target.classList.contains('delete-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
@@ -1682,6 +1683,8 @@
                     await remove(ref(db, 'drawings/' + id));
                 }
             }
+        }
+        // Nhấp nháy mũi tên xanh
         else if (e.target && e.target.classList.contains('blink-drawing')) {
             const id = e.target.getAttribute('data-id');
             if (!id) return;
@@ -1718,6 +1721,7 @@
                 alert("Chỉ có thể nhấp nháy trên mũi tên hướng dẫn");
             }
         }
+    }); 
     
 </script>
 </body>
