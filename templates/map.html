@@ -1455,7 +1455,7 @@
         let guideDrawingMode = false;
         let guideTempPoints = [];
         let guideTempPolyline = null;
-        let guideTempDecorator = null; // lưu pattern
+        let guideTempDecorator = null;
     
         const guideToolbar = L.control({ position: 'topright' });
         guideToolbar.onAdd = () => {
@@ -1534,29 +1534,24 @@
             if (guideTempPolyline) map.removeLayer(guideTempPolyline);
             if (guideTempDecorator) map.removeLayer(guideTempDecorator);
             guideTempPoints = [];
-            guideTempPolyline = null;
-            guideTempDecorator = null;
             map.getContainer().style.cursor = '';
+            guideDrawingMode = false;
         }
     
-        // Hàm tạo decorator (mũi tên dọc đường)
         function updateDecorator(points) {
             if (guideTempDecorator) map.removeLayer(guideTempDecorator);
             if (points.length < 2) return;
-            const polyline = L.polyline(points);
-            // Dùng Pattern: mũi tên màu xanh, kích thước 15px, cách đều 40px
-            guideTempDecorator = L.polylineDecorator(polyline, {
-                patterns: [
-                    {
-                        offset: 0,
-                        repeat: 40,     // khoảng cách giữa các mũi tên (pixel)
-                        symbol: L.Symbol.arrowHead({
-                            pixelSize: 15,
-                            polygon: false,
-                            pathOptions: { color: '#00aaff', weight: 3, fill: true, fillOpacity: 0.8 }
-                        })
-                    }
-                ]
+            const basePolyline = L.polyline(points);
+            guideTempDecorator = L.polylineDecorator(basePolyline, {
+                patterns: [{
+                    offset: 0,
+                    repeat: 40, // khoảng cách giữa các mũi tên (px)
+                    symbol: L.Symbol.arrowHead({
+                        pixelSize: 15,
+                        polygon: false,
+                        pathOptions: { color: '#00aaff', weight: 3, fill: true, fillOpacity: 0.8 }
+                    })
+                }]
             }).addTo(map);
         }
     
@@ -1588,21 +1583,7 @@
         }
     }
     
-    // ==================== LOGGING FUNCTION ====================
-    async function logArrowInteraction(action, drawingId, drawingAuthor, username, userName) {
-        const logRef = ref(db, 'arrow_logs');
-        await push(logRef, {
-            action: action,
-            drawingId: drawingId,
-            drawingAuthor: drawingAuthor,
-            performedBy: username,
-            performedByName: userName,
-            timestamp: Date.now()
-        });
-        console.log(`[Log] ${action} on arrow ${drawingId} by ${userName}`);
-    }
-    
-   // ==================== DRAWINGS LISTENER (HỖ TRỢ DECORATOR) ====================
+    // ==================== DRAWINGS LISTENER (HỖ TRỢ DECORATOR) ====================
     const drawingsRef = ref(db, 'drawings');
     
     // Xóa listener cũ để tránh trùng
@@ -1703,7 +1684,7 @@
                             clearInterval(blinkInterval);
                             polyline.setStyle({ color: originalColor, opacity: 0.8 });
                             if (layer.decorator) {
-                                // Cập nhật màu cho decorator khá phức tạp, tạm thời xóa và tạo lại (có thể tối ưu sau)
+                                // Cập nhật màu cho decorator
                                 const patterns = layer.decorator.options.patterns;
                                 patterns[0].symbol.options.pathOptions.color = originalColor;
                                 layer.decorator.setPatterns(patterns);
