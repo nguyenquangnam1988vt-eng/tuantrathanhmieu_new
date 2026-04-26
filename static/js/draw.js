@@ -210,8 +210,8 @@ if (userRole === 'commander') {
         // Thêm mũi tên dạng >>>>
         if (guideTempPolyline.arrowheads) {
             guideTempPolyline.arrowheads({
-                size: '10px',
-                frequency: '20px',   // 👈 khoảng cách giữa các mũi tên
+                size: '20px',
+                frequency: '80px',   // 👈 khoảng cách giữa các mũi tên
                 yawn: 60,            // 👈 độ nhọn (càng nhỏ càng nhọn)
                 fill: true,
                 color: '#00aaff'
