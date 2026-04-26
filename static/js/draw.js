@@ -335,7 +335,7 @@ document.addEventListener('click', async (e) => {
                 let blinkCount = 0;
                 const originalColor = drawing.color || '#00aaff';
                 const blinkInterval = setInterval(() => {
-                    if (blinkCount >= 6) {
+                    if (blinkCount >= 80) {
                         clearInterval(blinkInterval);
                         polyline.setStyle({ color: originalColor, opacity: 0.8 });
                     } else {
