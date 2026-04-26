@@ -1639,7 +1639,7 @@
             polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         }
         if (drawing.type === 'arrow_guide' && polyline.arrowheads) {
-            polyline.arrowheads({ size: '12px', frequency: '30px', color: drawing.color || '#00aaff' });
+            polyline.arrowheads({ size: '30px', frequency: '80px', color: drawing.color || '#00aaff' });
         }
         // Tạo popup với nút blink
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
