@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.geometryutil@0.5.0/src/leaflet.geometryutil.js"></script>
     <script src="https://unpkg.com/leaflet-arrowheads@1.2.0/dist/leaflet-arrowheads.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nosleep.js@0.12.0/dist/NoSleep.min.js"></script>
@@ -1554,8 +1555,8 @@
         
             // gọi lại arrowheads
             guideTempPolyline.arrowheads({
-                size: '10px',
-                frequency: '20px',
+                size: '20px',
+                frequency: '80px',
                 yawn: 60,
                 fill: true,
                 color: '#00aaff'
@@ -1639,7 +1640,7 @@
             polyline.arrowheads({ size: '15px', frequency: 'all', color: drawing.color || 'red' });
         }
         if (drawing.type === 'arrow_guide' && polyline.arrowheads) {
-            polyline.arrowheads({ size: '12px', frequency: '30px', color: drawing.color || '#00aaff' });
+            polyline.arrowheads({ size: '20px', frequency: '80px', color: drawing.color || '#00aaff' });
         }
         // Tạo popup với nút blink
         let popupContent = `✏️ Vẽ bởi: ${drawing.author}<br>${new Date(drawing.timestamp).toLocaleString()}`;
