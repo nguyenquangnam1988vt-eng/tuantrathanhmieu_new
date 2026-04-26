@@ -193,16 +193,31 @@ if (userRole === 'commander') {
 
     function onGuideMapClick(e) {
         if (!guideDrawingMode) return;
+    
         const { lat, lng } = e.latlng;
         guideTempPoints.push([lat, lng]);
+    
+        // Xóa line cũ
         if (guideTempPolyline) map.removeLayer(guideTempPolyline);
+    
+        // Vẽ lại line
         guideTempPolyline = L.polyline(guideTempPoints, {
             color: '#00aaff',
-            weight: 4,
-            opacity: 0.8
+            weight: 5,        // tăng độ dày cho rõ
+            opacity: 0.9
         }).addTo(map);
+    
+        // Thêm mũi tên dạng >>>>
         if (guideTempPolyline.arrowheads) {
-            guideTempPolyline.arrowheads({ size: '12px', frequency: '30px', color: '#00aaff' });
+            guideTempPolyline.arrowheads({
+                size: '10px',
+                frequency: '20px',   // 👈 khoảng cách giữa các mũi tên
+                yawn: 60,            // 👈 độ nhọn (càng nhỏ càng nhọn)
+                fill: true,
+                color: '#00aaff'
+            });
+        } else {
+            console.warn("Chưa load leaflet-arrowheads!");
         }
     }
 
