@@ -1509,13 +1509,28 @@
     
         function onGuideMapClick(e) {
             if (!guideDrawingMode) return;
+        
             const { lat, lng } = e.latlng;
             guideTempPoints.push([lat, lng]);
-            if (guideTempPolyline) map.removeLayer(guideTempPolyline);
-            guideTempPolyline = L.polyline(guideTempPoints, { color: '#00aaff', weight: 4, opacity: 0.8 }).addTo(map);
-            if (guideTempPolyline.arrowheads) {
-                guideTempPolyline.arrowheads({ size: '12px', frequency: '30px', color: '#00aaff' });
+        
+            if (!guideTempPolyline) {
+                guideTempPolyline = L.polyline([], {
+                    color: '#00aaff',
+                    weight: 5,
+                    opacity: 0.9
+                }).addTo(map);
             }
+        
+            guideTempPolyline.setLatLngs(guideTempPoints);
+        
+            // gọi lại arrowheads
+            guideTempPolyline.arrowheads({
+                size: '10px',
+                frequency: '20px',
+                yawn: 60,
+                fill: true,
+                color: '#00aaff'
+            });
         }
     
         function saveGuideDrawing() {
