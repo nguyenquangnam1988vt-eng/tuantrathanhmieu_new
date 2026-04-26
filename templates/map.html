@@ -1005,7 +1005,7 @@
         const canDelete = (userRole === 'commander' || userRole === 'admin' || drawing.authorId === myUsername);
         if (canDelete) popupContent += `<br><button class="delete-drawing" data-id="${id}">🗑️ Xóa nét vẽ</button>`;
         polyline.bindPopup(popupContent);
-        drawingLayers[id] = polyline;
+        drawingLayers[id] = { polyline, decorator };
     });
     onValue(drawingsRef, (snapshot) => {
         const data = snapshot.val() || {};
@@ -1013,7 +1013,8 @@
         // Xóa những layer không còn trong DB
         Object.keys(drawingLayers).forEach(id => {
             if (!currentIds.has(id)) {
-                map.removeLayer(drawingLayers[id]);
+                if (drawingLayers[id].polyline) map.removeLayer(drawingLayers[id].polyline);
+                if (drawingLayers[id].decorator) map.removeLayer(drawingLayers[id].decorator);
                 delete drawingLayers[id];
             }
         });
@@ -1600,9 +1601,7 @@
     }
     
     // ==================== DRAWINGS LISTENER (HỖ TRỢ DECORATOR) ====================
-    const drawingsRef = ref(db, 'drawings');
-    
-    // Xóa listener cũ để tránh trùng
+
     off(drawingsRef, 'child_added');
     off(drawingsRef, 'value');
     
