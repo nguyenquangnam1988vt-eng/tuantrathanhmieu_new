@@ -97,6 +97,11 @@ if (userRole === 'commander' || userRole === 'admin') {
 
 // ==================== VẼ MŨI TÊN CHỈ HƯỚNG MÀU XANH (CHỈ COMMANDER) ====================
 if (userRole === 'commander') {
+    let guideDrawingMode = false;
+    let guideTempPoints = [];
+    let guideTempPolyline = null;
+    let guideToggle, guideFinish, guideCancel;
+
     const guideArrowToolbar = L.control({ position: 'topright' });
     guideArrowToolbar.onAdd = () => {
         const div = L.DomUtil.create('div', 'guide-arrow-toolbar');
@@ -108,18 +113,61 @@ if (userRole === 'commander') {
             </div>
         `;
         L.DomEvent.disableClickPropagation(div);
+        // Gán sự kiện sau khi DOM đã sẵn sàng
+        setTimeout(() => {
+            guideToggle = div.querySelector('#guide-arrow-toggle');
+            guideFinish = div.querySelector('#guide-arrow-finish');
+            guideCancel = div.querySelector('#guide-arrow-cancel');
+
+            if (guideToggle) {
+                guideToggle.addEventListener('click', () => {
+                    if (guideDrawingMode) {
+                        cancelGuideDrawing();
+                    } else {
+                        // Tắt chế độ vẽ thường nếu đang bật
+                        if (typeof drawingMode !== 'undefined' && drawingMode) {
+                            drawingMode = false;
+                            const drawToggle = document.getElementById('draw-toggle');
+                            const drawFinish = document.getElementById('draw-finish');
+                            if (drawToggle) drawToggle.style.background = '';
+                            if (drawFinish) drawFinish.style.display = 'none';
+                            cancelDrawing();
+                        }
+                        guideDrawingMode = true;
+                        guideToggle.style.background = '#0088cc';
+                        if (guideFinish) guideFinish.style.display = 'inline-block';
+                        if (guideCancel) guideCancel.style.display = 'inline-block';
+                        startGuideDrawing();
+                    }
+                });
+            }
+            if (guideFinish) {
+                guideFinish.addEventListener('click', () => {
+                    if (guideDrawingMode && guideTempPoints.length >= 2) {
+                        saveGuideDrawing();
+                    }
+                    guideDrawingMode = false;
+                    if (guideToggle) guideToggle.style.background = '#00aaff';
+                    guideFinish.style.display = 'none';
+                    if (guideCancel) guideCancel.style.display = 'none';
+                    cancelGuideDrawing();
+                });
+            }
+            if (guideCancel) {
+                guideCancel.addEventListener('click', () => {
+                    cancelGuideDrawing();
+                    guideDrawingMode = false;
+                    if (guideToggle) guideToggle.style.background = '#00aaff';
+                    guideFinish.style.display = 'none';
+                    guideCancel.style.display = 'none';
+                });
+            }
+        }, 0);
         return div;
     };
     guideArrowToolbar.addTo(map);
 
-    let guideDrawingMode = false;
-    let guideTempPoints = [];
-    let guideTempPolyline = null;
-
-    const guideToggle = document.getElementById('guide-arrow-toggle');
-    const guideFinish = document.getElementById('guide-arrow-finish');
-    const guideCancel = document.getElementById('guide-arrow-cancel');
-
+    // Các hàm xử lý vẽ
     function startGuideDrawing() {
         console.log("[Draw] Start guide arrow drawing");
         guideTempPoints = [];
@@ -174,48 +222,6 @@ if (userRole === 'commander') {
         };
         push(ref(db, 'drawings'), drawingData);
         cancelGuideDrawing();
-    }
-
-    if (guideToggle) {
-        guideToggle.addEventListener('click', () => {
-            if (guideDrawingMode) {
-                cancelGuideDrawing();
-            } else {
-                // Tắt chế độ vẽ thường nếu đang bật
-                if (typeof drawingMode !== 'undefined' && drawingMode) {
-                    drawingMode = false;
-                    if (drawToggle) drawToggle.style.background = '';
-                    if (drawFinish) drawFinish.style.display = 'none';
-                    cancelDrawing();
-                }
-                guideDrawingMode = true;
-                guideToggle.style.background = '#0088cc';
-                if (guideFinish) guideFinish.style.display = 'inline-block';
-                if (guideCancel) guideCancel.style.display = 'inline-block';
-                startGuideDrawing();
-            }
-        });
-    }
-    if (guideFinish) {
-        guideFinish.addEventListener('click', () => {
-            if (guideDrawingMode && guideTempPoints.length >= 2) {
-                saveGuideDrawing();
-            }
-            guideDrawingMode = false;
-            if (guideToggle) guideToggle.style.background = '#00aaff';
-            guideFinish.style.display = 'none';
-            if (guideCancel) guideCancel.style.display = 'none';
-            cancelGuideDrawing();
-        });
-    }
-    if (guideCancel) {
-        guideCancel.addEventListener('click', () => {
-            cancelGuideDrawing();
-            guideDrawingMode = false;
-            if (guideToggle) guideToggle.style.background = '#00aaff';
-            guideFinish.style.display = 'none';
-            guideCancel.style.display = 'none';
-        });
     }
 }
 
